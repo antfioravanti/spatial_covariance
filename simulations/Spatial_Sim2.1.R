@@ -30,8 +30,8 @@ set.seed(42)
 # MODIFIED EXPONENTIAL
 
 # Define the dimensions of the 2D grid
-n1 = 50 # Dimension 1 size
-n2 = 50 # Dimension 2 size
+n1 = 30 # Dimension 1 size
+n2 = 30 # Dimension 2 size
 nvec = c(n1, n2)
 N = prod(nvec)
 # Generate spatial locations/coordinates of integers
@@ -47,8 +47,8 @@ alpha2 = 1
 #   high makes the covariance decay more slowly with distance
 #   low makes the covariance decay more quickly and with distance
 
-lambda1 = 5
-lambda2 = 5
+lambda1 = 6
+lambda2 = 6
 
 # Variance parameter:
 #   controls the magnitude of the overall variance
@@ -57,7 +57,7 @@ sigma = 1
 # Separability parameter:
 #   0 separable
 #   1 non-separable
-beta = 1
+beta = 0
 
 res = ModifiedExponentialCovariance(grid,
                                     sigma = sigma,
@@ -75,9 +75,9 @@ file_path <- file.path(wd, paste0("plots/Cova_",
                                   "beta", beta, "_",
                                   "alpha", alpha1, "_",
                                   "lambda", lambda1, ".png"))
-png(file_path, width = 800, height = 500)
+#png(file_path, width = 800, height = 500)
 plot_matrix(true_cov, main = title_cov,  labels = F)
-dev.off()
+#dev.off()
 #-------------------------------------------------------------------------------
 # SIMULATION EXAMPLE
 # params = list(sigma = 1,
