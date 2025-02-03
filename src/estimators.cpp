@@ -12,9 +12,10 @@
 // Use the Rcpp namespace to avoid prefixing Rcpp classes
 using namespace Rcpp;
 
-
+//-----------------------------------------------------------------------------
+// GENERAL FUNCTIONS
 int modulo(int a, int b) {
-    int result = ((a % b) +b) % b;
+    int result = ((a % b) + b) % b;
     return result;
 }
 //-----------------------------------------------------------------------------
@@ -95,4 +96,32 @@ NumericVector compute_m_values_cpp(int i, int j, NumericVector nvec,
     }
 
     return m_ij;
+}
+
+
+// [[Rcpp::export]]
+NumericMatrix compute_M_matrix_cpp(int N, 
+                                    NumericVector nvec,
+                                    int d =1,
+                                    bool flipsign = true,
+                                    bool flipposition = false){
+
+    // Determine the number of spatial dimension
+    int g = nvec.size();
+    // Initialize the matrix of size N*N X g
+    NumericMatrix M_ij_matrix(N*N, g);
+
+    int idx = 0;
+    for(int i=1; i <=N; i++){
+        for(int j=1; j <=N; j++){
+            // Compute the m values for i and j
+            NumericVector m_ij = compute_m_values_cpp(i, j,
+                                                      nvec, d,
+                                                      flipsign, flipposition);
+            // Assign the m values to the matrix
+            M_ij_matrix(idx, _) = m_ij; // Use slicing functionality of Rccp
+            idx++;
+        }
+    }
+    return M_ij_matrix;    
 }

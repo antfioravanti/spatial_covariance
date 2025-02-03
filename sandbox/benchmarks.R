@@ -29,52 +29,46 @@ source("R/plotting.R")  # Plotting functions
 sourceCpp("src/estimators.cpp")
 set.seed(42)
 #-------------------------------------------------------------------------------
+# COMPARE M VALUES FUNCTIONS
 
+# Test input
+i = 21
+j = 1
+nvec = c(20,20)
+N = prod(nvec)
+d = 1
+flipsign = TRUE
+flipposition = FALSE
 
+# Run the R function
+result_r = compute_m_values(i, j, nvec, d, flipsign, flipposition)
 
+# Run the C++ function
+result_cpp = compute_m_values_cpp(i, j, nvec, d, flipsign, flipposition)
+
+result_r
+result_cpp
 
 # Benchmark both versions
 benchmark_results <- microbenchmark(
   R_version = compute_m_values(5, 3, nvec, d = 1, flipsign = TRUE, flipposition = FALSE),
   Cpp_version = compute_m_values_cpp(5, 3, nvec, d = 1, flipsign = TRUE, flipposition = FALSE),
-  times = 10000
+  times = 1000
 )
-
 print(benchmark_results)
 
-# Test input
-i <- 5
-j <- 3
-nvec <- c(20,20)
-d <- 1
-flipsign <- TRUE
-flipposition <- FALSE
+#-------------------------------------------------------------------------------
+# COMPARE M MATRIX FUNCTIONS
+M_ij_matrix = compute_M_matrix(N, nvec = nvec)
+M_ij_matrix_cpp = compute_M_matrix_cpp(N, nvec = nvec)
 
-# Run the R function
-result_r <- compute_m_values(i, j, nvec, d, flipsign, flipposition)
+all.equal(M_ij_matrix, M_ij_matrix_cpp)
 
-# Run the C++ function
-result_cpp <- compute_m_values_cpp(i, j, nvec, d, flipsign, flipposition)
-
-
-i <- 5
-j <- 3
-
-d <- 1
-flipsign <- TRUE
-flipposition <- FALSE
-
-
-k = -1
-s = 2
-d = 1
-m_fun(k = k, s=s, d=1, nvec=nvec)
-m_fun_cpp(k = k, s=s, d=1, nvec=nvec)
-
-
-
-prod_prev_n = prod(nvec[1:(s-1)])
-m = ((ceiling(k / (d * prod_prev_n)) - 1) %% 
-       (d * prod_prev_n * nvec[s])) + 1
-
+# Benchmark both versions
+benchmark_results <- microbenchmark(
+  R_version = compute_M_matrix_cpp(N, nvec, flipsign = TRUE, flipposition = FALSE),
+  Cpp_version = compute_M_matrix_cpp(N, nvec=nvec, flipsign = TRUE, flipposition = FALSE),
+  times = 1000
+)
+print(benchmark_results)
 

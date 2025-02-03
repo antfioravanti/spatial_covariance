@@ -62,7 +62,7 @@ compute_m_values = function(i,j, nvec, d=1,
   return(m_ij)
 }
 
-compute_M_matrix = function(N, flipsign = T, flipposition = T){
+compute_M_matrix = function(N, nvec, flipsign = TRUE, flipposition = FALSE){
     # Computing M Matrix for correct lags
     M_ij_list = vector("list", N*N)
     for(i in 1:N){
