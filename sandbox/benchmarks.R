@@ -66,9 +66,9 @@ all.equal(M_ij_matrix, M_ij_matrix_cpp)
 
 # Benchmark both versions
 benchmark_results <- microbenchmark(
-  R_version = compute_M_matrix_cpp(N, nvec, flipsign = TRUE, flipposition = FALSE),
+  R_version = compute_M_matrix(N, nvec, flipsign = TRUE, flipposition = FALSE),
   Cpp_version = compute_M_matrix_cpp(N, nvec=nvec, flipsign = TRUE, flipposition = FALSE),
-  times = 1000
+  times = 100
 )
 print(benchmark_results)
 
