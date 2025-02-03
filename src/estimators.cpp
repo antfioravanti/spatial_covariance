@@ -12,6 +12,11 @@
 // Use the Rcpp namespace to avoid prefixing Rcpp classes
 using namespace Rcpp;
 
+
+int modulo(int a, int b) {
+    int result = ((a % b) +b) % b;
+    return result;
+}
 //-----------------------------------------------------------------------------
 // M FUNCTIONS
 //-----------------------------------------------------------------------------
@@ -19,7 +24,7 @@ using namespace Rcpp;
 // [[Rcpp::export]]
 int m0_fun_cpp(int k, int d = 1){
     // M0 function
-    return ((k -1) % d) +1;
+    return modulo(k - 1, d) +1;
 }
 
 // [[Rcpp::export]]
@@ -32,17 +37,18 @@ int m_fun_cpp(int k, int s, int d, NumericVector nvec){
 
     if (s == 1){
         // Calculate the ceiling of k/d and apply the modulus operation
-        int result = ((int)std::ceil((double)k/d) - 1) % (d * (int)nvec[0])+ 1;
+        int result = modulo((int)std::ceil((double)k/d) - 1,
+                            d * (int)nvec[0]) + 1;
         return result;
     } else {
         // Calculate the product of the previous dimensions nvec[1:(s-1)]
-        double prod_previous_n = 1.0;
-        for (int idx = 0; idx < (s-1); ++idx) {
+        int prod_previous_n = 1;
+        for (int idx = 0; idx < (s - 1); ++idx) {
             prod_previous_n *= nvec[idx];
         }
         // Ceiling and modulus operations for the case s > 1
-        int result = ((int)std::ceil((double)k / (d * prod_previous_n)) -1) % 
-                     (d * (int)(prod_previous_n * nvec[s - 1])) + 1;
+        int result = modulo((int)std::ceil((double)k /(d*prod_previous_n)) - 1, 
+                     d * (int)(prod_previous_n * nvec[s - 1])) + 1;
         return result;
     }
 }
@@ -74,8 +80,7 @@ NumericVector compute_m_values_cpp(int i, int j, NumericVector nvec,
 
     // Compute the differences using m_fun_cpp
     for (int s = 1; s <= g; s++){
-        m_ij[s - 1] = (i - 1) % (d * static_cast<int>(nvec[s - 1]))+ 1 -
-                      ((j - 1) % (d * static_cast<int>(nvec[s - 1])) + 1);
+        m_ij[s - 1] = m_fun_cpp(i, s, d, nvec) - m_fun_cpp(j, s, d, nvec);
     }
     // If flipsign is true, multiply each element by -1
     if (flipsign){

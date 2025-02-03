@@ -30,7 +30,7 @@ sourceCpp("src/estimators.cpp")
 set.seed(42)
 #-------------------------------------------------------------------------------
 
-nvec <- c(30,30)
+
 
 
 # Benchmark both versions
@@ -65,13 +65,16 @@ flipsign <- TRUE
 flipposition <- FALSE
 
 
-k = -20
+k = -1
 s = 2
 d = 1
-m_fun(k = k, s= s,d=1, nvec=nvec)
+m_fun(k = k, s=s, d=1, nvec=nvec)
 m_fun_cpp(k = k, s=s, d=1, nvec=nvec)
 
 
 
+prod_prev_n = prod(nvec[1:(s-1)])
+m = ((ceiling(k / (d * prod_prev_n)) - 1) %% 
+       (d * prod_prev_n * nvec[s])) + 1
 
 
