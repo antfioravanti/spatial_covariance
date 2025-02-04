@@ -125,3 +125,131 @@ NumericMatrix compute_M_matrix_cpp(int N,
     }
     return M_ij_matrix;    
 }
+
+
+// [[Rcpp::export]]
+List get_submatrices_cpp(NumericMatrix X, NumericVector hvec) {
+
+    int h1 = hvec[0]; // lag1
+    int h2 = hvec[1]; // lag2
+    // Function to extract submatrices from a matrix X
+    int n1 = X.nrow();
+    int n2 = X.ncol();
+
+    // Finding the regions on which to shift the lags for the autocorrelation
+    // Horizontal lag
+    int T11 = std::max(1, 1 - h1);
+    int T12 = std::min(n1, n1 - h1);
+
+    // Vertical lag
+    int T21 = std::max(1, 1 - h2);
+    int T22 = std::min(n2, n2 - h2);
+
+    // Define the submatrices
+    NumericMatrix X1 = X(Range(T21 - 1, T22 - 1), Range(T11 - 1, T12 - 1));
+    NumericMatrix X2 = X(Range(T21 + h2 - 1, T22 + h2 - 1),
+                         Range(T11 + h1 - 1, T12 + h1 - 1));
+
+    // Return the submatrices as a list
+    return List::create(Named("X1") = X1, Named("X2") = X2);
+}
+
+// [[Rcpp::export]]
+double SpatialAutoCov_cpp(NumericMatrix X, NumericVector hvec){
+
+    // Estimator for the Autocovariance function (page 2 of the manuscript)
+    // Inputs:
+    //  X - matrix of size n1 x n2
+    // hvec - vector of size 2 containing the spatial lags
+
+    // hvec is the vector of spatial lags where 
+    // h1 is the horizontal lag
+    // h2 is the vertical lag
+
+    int h1 = (int)hvec[0];
+    int h2 = (int)hvec[1];
+
+    // Spatial dimension sizes
+    int n1 = X.nrow();
+    int n2 = X.ncol();
+    int N = n1 * n2;
+
+    // Mean of the matrix X
+    double X_mean = Rcpp::mean(X);
+
+    // Determine the index bounds
+
+    // Horizontal lag
+    int T11 = std::max(1, 1 - h1);
+    int T12 = std::min(n1, n1 - h1);
+    // Vertical lag
+    int T21 = std::max(1, 1 - h2);
+    int T22 = std::min(n2, n2 - h2);
+
+    // Define the submatrices
+    NumericMatrix X1 = X(Range(T21 - 1, T22 - 1), Range(T11 - 1, T12 - 1));
+    NumericMatrix X2 = X(Range(T21 + h2 - 1, T22 + h2 - 1),
+                         Range(T11 + h1 - 1, T12 + h1 - 1));
+
+   // Convert sub-matrices to vectors
+    NumericVector sub_vector1 = as<NumericVector>(X1);
+    NumericVector sub_vector2 = as<NumericVector>(X2);
+
+    // Subtract the mean from the sub-vectors
+    NumericVector subvector_1 = sub_vector1 - X_mean;
+    NumericVector subvector_2 = sub_vector2 - X_mean;
+
+    // Compute the autocovariance
+    double autocov = sum(subvector_1 * subvector_2) / N;
+
+    return autocov;
+}
+
+
+// [[Rcpp::export]]
+double SpatialAutoCov_cpp_loop(NumericMatrix X, NumericVector hvec) {
+    // Estimator for the Autocovariance function (page 2 of the manuscript)
+    // Inputs:
+    //  X - matrix of spatial / spatiotemporal observations
+    //  hvec - vector containing the dimensional lags
+
+    int h1 = hvec[0]; // lag1
+    int h2 = hvec[1]; // lag2
+
+    // Mean of the matrix X
+    double X_mean = Rcpp::mean(X);
+
+    int n1 = X.nrow();
+    int n2 = X.ncol();
+    int N = n1 * n2;
+
+    // Finding the regions on which to shift the lags for the autocorrelation
+    // Horizontal lag
+    int T11 = std::max(1, 1 - h1);
+    int T12 = std::min(n1, n1 - h1);
+
+    // Vertical lag
+    int T21 = std::max(1, 1 - h2);
+    int T22 = std::min(n2, n2 - h2);
+
+    // Define the submatrices
+    NumericMatrix X1 = X(Range(T21 - 1, T22 - 1), Range(T11 - 1, T12 - 1));
+    NumericMatrix X2 = X(Range(T21 + h2 - 1, T22 + h2 - 1),
+                         Range(T11 + h1 - 1, T12 + h1 - 1));
+    // Convert sub-matrices to vectors
+    NumericVector sub_vector1 = as<NumericVector>(X1);
+    NumericVector sub_vector2 = as<NumericVector>(X2);
+
+    // Subtract the mean from the sub-vectors
+    NumericVector subvector_1 = sub_vector1 - X_mean;
+    NumericVector subvector_2 = sub_vector2 - X_mean;
+
+    // Compute the autocovariance using a for loop
+    double autocov = 0.0;
+    for (int i = 0; i < subvector_1.size(); ++i) {
+        autocov += subvector_1[i] * subvector_2[i];
+    }
+    autocov /= N;
+
+    return autocov;
+}

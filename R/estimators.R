@@ -336,6 +336,35 @@ SpatialAutoCov_v0 = function(X, hvec){
   return(C_h_hat)
 }
 
+GetSubmatrices = function(X, hvec){
+  # Estimator for the Autocovariance function (page 2 of the manuscript)
+  # Input:
+  #   X     matrix of spatial / spatiotemporal observations
+  #   hvec  vector containing the dimensional lags
+  
+  h1 = hvec[1] # lag1
+  h2 = hvec[2] # lag2
+  
+  X_mean = mean(as.vector(X))
+  n1 = dim(X)[1]
+  n2 = dim(X)[2]
+  N = n1*n2
+  
+  #Finding the regions on which to shift the lags for the autocorrelation
+  # Horizontal lag
+  T11 = max(1, 1-h1)
+  T12 = min(n1, n1-h1)
+  
+  # Vertical lag
+  T21 = max(1, 1-h2)
+  T22 = min(n2, n2-h2)
+  
+  sub_matrix1 = X[T21:T22, T11:T12]
+  sub_matrix2 = X[(T21+h2):(T22+h2), (T11+h1):(T12+h1)]
+ 
+  return(list(X1 = sub_matrix1, X2 = sub_matrix2))
+}
+
 
 SpatialAutoCov = function(X, hvec){
   # Estimator for the Autocovariance function (page 2 of the manuscript)
@@ -362,6 +391,40 @@ SpatialAutoCov = function(X, hvec){
   
   sub_matrix1 = X[T21:T22, T11:T12]
   sub_matrix2 = X[(T21+h2):(T22+h2), (T11+h1):(T12+h1)]
+  
+  sub_vector1 = as.vector(sub_matrix1) # column wise vectorization
+  sub_vector2 = as.vector(sub_matrix2) # column wise vectorization
+  
+  C_h_hat = 1/N* sum(t((sub_vector1) * t((sub_vector2))))
+  
+  return(C_h_hat)
+}
+
+SpatialAutoCov_v2 = function(X, hvec){
+  # Estimator for the Autocovariance function (page 2 of the manuscript)
+  # Input:
+  #   X     matrix of spatial / spatiotemporal observations
+  #   hvec  vector containing the dimensional lags
+  
+  h1 = hvec[1] # lag1
+  h2 = hvec[2] # lag2
+  
+  X_mean = mean(as.vector(X))
+  n1 = dim(X)[1]
+  n2 = dim(X)[2]
+  N = n1*n2
+  
+  #Finding the regions on which to shift the lags for the autocorrelation
+  # Horizontal lag
+  T11 = max(1, 1-h1)
+  T12 = min(n1, n1-h1)
+  
+  # Vertical lag
+  T21 = max(1, 1-h2)
+  T22 = min(n2, n2-h2)
+  
+  sub_matrix1 = X[T21:T22, T11:T12] - X_mean
+  sub_matrix2 = X[(T21+h2):(T22+h2), (T11+h1):(T12+h1)] - X_mean
   
   sub_vector1 = as.vector(sub_matrix1) # column wise vectorization
   sub_vector2 = as.vector(sub_matrix2) # column wise vectorization

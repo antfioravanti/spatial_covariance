@@ -65,10 +65,78 @@ M_ij_matrix_cpp = compute_M_matrix_cpp(N, nvec = nvec)
 all.equal(M_ij_matrix, M_ij_matrix_cpp)
 
 # Benchmark both versions
-benchmark_results <- microbenchmark(
+benchmark_results = microbenchmark(
   R_version = compute_M_matrix(N, nvec, flipsign = TRUE, flipposition = FALSE),
   Cpp_version = compute_M_matrix_cpp(N, nvec=nvec, flipsign = TRUE, flipposition = FALSE),
   times = 100
 )
 print(benchmark_results)
+#-------------------------------------------------------------------------------
+# COMPARE AUTOCOVARIANCE FUNCTIONS
 
+n1 = 5
+n2 = 5
+hvec = c(4,0)
+
+h1 = hvec[1]
+h2 = hvec[2]
+
+
+T11 = max(1, 1-h1)
+T12 = min(n1, n1-h1)
+
+# Vertical lag
+T21 = max(1, 1-h2)
+T22 = min(n2, n2-h2)
+
+c(T11, T12, T21, T22)
+
+sigma = 1
+alpha = 1
+beta = 0
+grid_size = 5
+lambda = 3
+params = list(sigma = sigma,
+              alpha1 = alpha,
+              alpha2 = alpha,
+              lambda1 = lambda,
+              lambda2 = lambda,
+              beta = beta,
+              test_sep = F)
+
+
+spatial_process = simulate_spatial_process(
+  covariance_function = ModifiedExponentialCovariance,
+  grid_size = grid_size,
+  params = params,
+  seed = 42)
+
+
+
+# Get Submatrices
+hvec = c(0,4)
+
+res = GetSubmatrices(spatial_process$X, hvec)
+res_cpp = get_submatrices_cpp(spatial_process$X, hvec)
+spatial_process$X
+res$X1
+res_cpp$X1
+res$X2
+res_cpp$X2
+
+estCov = SpatialAutoCov(spatial_process$X, hvec)
+estCov_v2 = SpatialAutoCov_v2(spatial_process$X, hvec)
+estCov_cpp = SpatialAutoCov_cpp(spatial_process$X, hvec)
+estCov_cpp_loop = SpatialAutoCov_cpp_loop(spatial_process$X, hvec)
+estCov
+estCov_v2
+estCov_cpp
+estCov_cpp_loop
+
+# Benchmark both versions
+benchmark_results = microbenchmark(
+  R_version = SpatialAutoCov_v2(spatial_process$X, hvec),
+  Cpp_version = SpatialAutoCov_cpp(spatial_process$X, hvec=hvec),
+  Cpp_version_loop = SpatialAutoCov_cpp_loop(spatial_process$X,hvec=hvec),
+  times = 1000
+)
