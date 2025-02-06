@@ -443,8 +443,10 @@ Tapered_Sep_Autocovariance_Kron = function(X, c=1, l=1, type = "rectangular"){
       for(r in (g-1):1){
         KronTaperCov = kronecker(KronTaperCov, tapered_cov_sep[[r]])
       }
-  return(list(KronTaperCov = KronTaperCov, kappas_sep = kappas_sep,
-              cov_sep = cov_sep, tapered_cov_sep = tapered_cov_sep))
+  return(list(KronTaperCov = KronTaperCov,
+              kappas_sep = kappas_sep,
+              cov_sep = cov_sep,
+              tapered_cov_sep = tapered_cov_sep))
 }
 
 
