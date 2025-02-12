@@ -91,18 +91,18 @@ ModifiedExponentialCovariance = function(grid,
   if (!all(colnames(grid) == expected_names)) {
     stop("Error: The grid must have column names 't1' and 't2'.")
   }
-
+  
   # Compute pairwise differences for each dimension
   h1_diff = outer(grid$t1, grid$t1, "-")  # Difference in first dimension
   h2_diff = outer(grid$t2, grid$t2, "-")  # Difference in second dimension
-
+  
   cov = sigma^2 * exp(-(abs(h1_diff)^alpha1 / lambda1 +
-                       abs(h2_diff)^alpha2 / lambda2 + 
-                        beta * abs(h1_diff - h2_diff)))
-  if(test_sep == T){
+                          abs(h2_diff)^alpha2 / lambda2 + 
+                          beta * abs(h1_diff - h2_diff)))
+  if(isTRUE(test_sep)){
     cov_sep = sigma^2*exp(-(abs(h1_diff)^alpha1 / lambda1)-beta*abs(h1_diff))* 
-                      exp(-(abs(h2_diff)^alpha2 / lambda2) -beta*abs(h2_diff))
-
+      exp(-(abs(h2_diff)^alpha2 / lambda2) -beta*abs(h2_diff))
+    
     norm_diff = norm(cov_sep - cov, type = "2")
     return(list(covariance = cov, norm_diff = norm_diff))
   }else{
@@ -114,9 +114,9 @@ ModifiedExponentialCovariance = function(grid,
 # GENERATE SIMULATION
 #-------------------------------------------------------------------------------
 simulate_spatial_process = function(covariance_function, 
-                                     grid_size, 
-                                     params = list(),
-                                     seed = 42) {
+                                    grid_size, 
+                                    params = list(),
+                                    seed = 42) {
   
   # Generate a square grid
   grid = generate_square_grid(grid_size)

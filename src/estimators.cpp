@@ -365,5 +365,247 @@ double SpatialAutoCov_cpp_loop(NumericMatrix X, NumericVector hvec) {
 
     return autocov;
 }
+// [[Rcpp::export]]
+NumericVector compute_autocovariance_vector_cpp(NumericMatrix X,
+                                    NumericMatrix M_ij_matrix) {
+    int n = M_ij_matrix.nrow();            // number of rows in the matrix
+    NumericVector C_ij(n);             // output vector
 
+    // Loop over each row of the matrix
+    for (int i = 0; i < n; i++) {
+    // Extract the i-th row as a NumericVector.
+    // Note: M_ij_matrix(i, _) returns the entire row.
+    NumericVector hvec = M_ij_matrix(i, _);
+    // Compute the autocovariance for this h vector
+    C_ij[i] = SpatialAutoCov_cpp(X, hvec);
+    }
+
+    return C_ij;
+}
+
+//-----------------------------------------------------------------------------
 // TODO: Implement Kronecker Product Estimator
+
+// Kronecker Product of two matrices
+// [[Rcpp::export]]
+NumericMatrix kroneckerProduct_cpp(const NumericMatrix& A, 
+                               const NumericMatrix& B) {
+
+    // Get the dimensions of the input matrices
+    int a_rows = A.nrow();
+    int a_cols = A.ncol();
+    int b_rows = B.nrow();
+    int b_cols = B.ncol();
+
+    NumericMatrix kronmat(a_rows * b_rows, a_cols * b_cols);
+    for (int i = 0; i < a_rows; i++) {
+        for (int j = 0; j < a_cols; j++) {
+            double a_ij = A(i, j);
+            for (int k = 0; k < b_rows; k++) {
+                for (int l = 0; l < b_cols; l++) {
+                    kronmat(i * b_rows + k, j * b_cols + l) = a_ij * B(k, l);
+                }
+            }
+        }
+    }
+    return kronmat;
+}
+
+// Kronecker Estimator Part 1
+
+
+// [[Rcpp::export]]
+List tapered_sep_autocovariance_cpp(NumericMatrix X, 
+                                    double c = 1.0, 
+                                    double l = 1.0, 
+                                    std::string type = "rectangular") {
+  // Get dimensions. In R, X is assumed to have a dim attribute.
+  IntegerVector dims = X.attr("dim");
+  int g = dims.size();  // e.g., typically 2 for a matrix; can be >2 if X is an array.
+  
+  // In your R function, n1 = ncol(X) and n2 = nrow(X).
+  int n1 = X.ncol();    // number of columns
+  int n2 = X.nrow();    // number of rows
+
+  // Compute C(0,0) = SpatialAutoCov(X, rep(0, g))
+  NumericVector h0(g, 0.0);
+  double C_00 = SpatialAutoCov_cpp(X, h0);
+
+  // Prepare lists to hold the r-specific matrices
+  List kappas_sep(g);       // taper matrices
+  List cov_sep(g);          // normalized covariance matrices
+  List tapered_cov_sep(g);  // elementwise product (tapered covariance)
+
+  // Temporary matrices to be re-used for each spatial dimension r.
+  // We use matrices of dimension (n2 rows, n1 columns) to mimic your R code.
+  NumericMatrix kappa_sep_mat(n2, n1);
+  NumericMatrix C_sep_mat(n2, n1);
+
+  // Loop over each spatial coordinate (r = 0, …, g-1, corresponding to r=1,...,g in R)
+  for (int r = 0; r < g; r++) {
+    // Loop over the “grid.”  
+    // In your original R code, the loops were over (i in 1:n1) and (j in 1:n2).
+    // Here we let:
+    //    i = 0,...,n1-1 (corresponding to column index)
+    //    j = 0,...,n2-1 (corresponding to row index)
+    // and we assign to element (j,i) in a matrix with n2 rows and n1 columns.
+    for (int i = 0; i < n1; i++) {
+      for (int j = 0; j < n2; j++) {
+        // Create a lag vector hvec of length g (all zeros)
+        NumericVector hvec(g, 0.0);
+        // In the original R code: hvec[r] = i - j (with R’s 1-indexing)
+        // Here we mimic that by setting:
+        hvec[r] = (i - j);
+        // Compute the taper weight using your C++ taper function.
+        kappa_sep_mat(j, i) = flat_top_taper_cpp(hvec, c, l, 0.5, type);
+        // Compute the spatial autocovariance for lag vector hvec.
+        C_sep_mat(j, i) = SpatialAutoCov_cpp(X, hvec);
+      }
+    }
+    
+    // Save the computed taper matrix.
+    kappas_sep[r] = clone(kappa_sep_mat);
+    
+    // Compute cov_sep: normalize C_sep_mat by multiplying with C_00^(-(g-1))
+    double factor = std::pow(C_00, -(g - 1));
+    NumericMatrix cov_mat(n2, n1);
+    for (int i = 0; i < n2; i++) {
+      for (int j = 0; j < n1; j++) {
+        cov_mat(i, j) = factor * C_sep_mat(i, j);
+      }
+    }
+    cov_sep[r] = cov_mat;
+    
+    // Compute tapered_cov_sep: elementwise product of kappa_sep_mat and C_sep_mat.
+    NumericMatrix tapered_mat(n2, n1);
+    for (int i = 0; i < n2; i++) {
+      for (int j = 0; j < n1; j++) {
+        tapered_mat(i, j) = kappa_sep_mat(i, j) * C_sep_mat(i, j);
+      }
+    }
+    tapered_cov_sep[r] = tapered_mat;
+  }
+
+  // Return the computed lists.
+  // (The final Kronecker product will be computed in R.)
+  return List::create(
+    Named("kappas_sep") = kappas_sep,
+    Named("cov_sep") = cov_sep,
+    Named("tapered_cov_sep") = tapered_cov_sep
+  );
+}
+
+//-----------------------------------------------------------------------------
+// BANDWIDTH SELECTION
+//-----------------------------------------------------------------------------
+
+
+
+
+// [[Rcpp::export]]
+List bandwidth_selection_spatial_cpp(NumericMatrix corrMat,
+                                     int n1, int n2, 
+                                     double C0 = 2, double c_ef = 1) {
+
+// ----------------------------------------------------------------------------
+// bandwidth_selection_spatial_cpp
+//
+// Inputs:
+//   corrMat : an N x N correlation matrix (with N = n1*n2)
+//   n1      : number of rows in the original lattice
+//   n2      : number of columns in the original lattice
+//   C0      : constant (default = 2)
+//   c_ef    : effective constant (default = 1)
+// 
+// Returns a list with two elements, l1 and l2, the selected bandwidths.
+// ----------------------------------------------------------------------------
+  // Basic checks
+  int N = corrMat.nrow();
+  if (N != corrMat.ncol()) {
+    stop("corrMat must be square");
+  }
+  if (N != n1 * n2) {
+    stop("n1*n2 must match the dimension of corrMat.");
+  }
+  
+  // Helper lambdas: convert 1-indexed k (from 1 to N) to (row, col)
+  // using row-major ordering.
+  auto get_row = [n2](int k) -> int {
+    return ((k - 1) / n2) + 1;
+  };
+  auto get_col = [n2](int k) -> int {
+    return ((k - 1) % n2) + 1;
+  };
+  
+  // 2) Extract "pure row-lag" correlations: for lag h (0 to n1-1)
+  std::vector<double> rowCorrVec(n1, 0.0);
+  for (int h = 0; h < n1; h++) {
+    double ss = 0.0;
+    int count = 0;
+    for (int i = 1; i <= N; i++) {
+      int ri = get_row(i);
+      int ci = get_col(i);
+      int rj = ri - h;
+      int cj = ci;
+      if (rj >= 1 && rj <= n1) {
+        // Convert (rj, cj) back to a 1-indexed vector index:
+        int j = (rj - 1) * n2 + cj;
+        ss += corrMat(i - 1, j - 1);
+        count++;
+      }
+    }
+    rowCorrVec[h] = (count > 0) ? ss / count : 0.0;
+  }
+  
+  // 3) Extract "pure column-lag" correlations: for lag h (0 to n2-1)
+  std::vector<double> colCorrVec(n2, 0.0);
+  for (int h = 0; h < n2; h++) {
+    double ss = 0.0;
+    int count = 0;
+    for (int i = 1; i <= N; i++) {
+      int ri = get_row(i);
+      int ci = get_col(i);
+      int rj = ri;
+      int cj = ci - h;
+      if (cj >= 1 && cj <= n2) {
+        int j = (rj - 1) * n2 + cj;
+        ss += corrMat(i - 1, j - 1);
+        count++;
+      }
+    }
+    colCorrVec[h] = (count > 0) ? ss / count : 0.0;
+  }
+  
+  // 4) Politis-style cutoff function: find smallest q such that for m = 0,..,K_T,
+  //    |rho_vec[q+m]| < threshold.
+  auto find_q_1d = [&](const std::vector<double>& rho_vec, double threshold, int K_T) -> int {
+    int max_lag = rho_vec.size() - 1;
+    for (int q = 0; q <= max_lag; q++) {
+      bool ok = true;
+      for (int m = 0; m <= K_T; m++) {
+        int qm = q + m;
+        if (qm > max_lag) break;
+        if (std::abs(rho_vec[qm]) >= threshold) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) return q;
+    }
+    return max_lag;
+  };
+  
+  // 5) Apply threshold to find q1 and q2.
+  double threshold_val = C0 * std::sqrt(std::log10(static_cast<double>(N)) / N);
+  double temp = std::sqrt(std::log10(static_cast<double>(N)));
+  int K_T_val = std::max(5, static_cast<int>(temp));
+  
+  int q1 = find_q_1d(rowCorrVec, threshold_val, K_T_val);
+  int q2 = find_q_1d(colCorrVec, threshold_val, K_T_val);
+  
+  // 6) Convert q1 and q2 into final product-kernel bandwidths (l1, l2)
+  int l1 = std::max(static_cast<int>(std::ceil(q1 / c_ef)), 1);
+  int l2 = std::max(static_cast<int>(std::ceil(q2 / c_ef)), 1);
+  
+  return List::create(Named("l1") = l1, Named("l2") = l2);
+}

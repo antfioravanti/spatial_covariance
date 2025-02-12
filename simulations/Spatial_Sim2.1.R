@@ -197,7 +197,7 @@ for(lambda in lambdas){
       true_cov = spatial_process$covariance
     
       # Computing M vector for correct lags
-      M_ij_matrix = compute_M_matrix(N)
+      M_ij_matrix = compute_M_matrix(N, nvec = nvec)
       
       # Compute all autocovariances at once using vectorized form
       # Use sapply to map through each row of the m_ij matrix

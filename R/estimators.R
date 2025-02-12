@@ -4,7 +4,7 @@ if (!require(MASS)) install.packages("MASS"); library(MASS)
 if (!require(foreach)) install.packages("foreach"); library(foreach)
 if (!require(parallel)) install.packages("parallel"); library(parallel)
 if (!require(doParallel)) install.packages("doParallel"); library(doParallel)
-
+sourceCpp("src/estimators.cpp")
 #-------------------------------------------------------------------------------
 # M FUNCTIONS
 #-------------------------------------------------------------------------------
@@ -325,8 +325,8 @@ SpatialAutoCov_v0 = function(X, hvec){
   # cov_lags = 1/N* sum((X[T11:T12, T21:T22] - X_mean) %*%
   #                       t(X[(T11+h1):(T12+h1), (T21+h2):(T22+h2)] - X_mean))
   
-  sub_matrix1 = X[(T11+h1):(T12+h1), (T21+h2):(T22+h2)] - X_mean
-  sub_matrix2 = X[T11:T12, T21:T22] - X_mean
+  sub_matrix1 = X[(T11+h1):(T12+h1), (T21+h2):(T22+h2)] 
+  sub_matrix2 = X[T11:T12, T21:T22] 
   
   sub_vector1 = as.vector(sub_matrix1) # column wise vectorization
   sub_vector2 = as.vector(sub_matrix2) # column wise vectorization
@@ -360,8 +360,8 @@ SpatialAutoCov = function(X, hvec){
   T21 = max(1, 1-h2)
   T22 = min(n2, n2-h2)
   
-  sub_matrix1 = X[T21:T22, T11:T12]
-  sub_matrix2 = X[(T21+h2):(T22+h2), (T11+h1):(T12+h1)]
+  sub_matrix1 = X[T21:T22, T11:T12] - X_mean
+  sub_matrix2 = X[(T21+h2):(T22+h2), (T11+h1):(T12+h1)] - X_mean
   
   sub_vector1 = as.vector(sub_matrix1) # column wise vectorization
   sub_vector2 = as.vector(sub_matrix2) # column wise vectorization
@@ -451,70 +451,93 @@ Tapered_Sep_Autocovariance_Kron = function(X, c=1, l=1, type = "rectangular"){
 
 
 
-Tapered_Sep_Autocovariance_Kron_v2 = function(X, c=1, L=c(1,1),
-                                           type = "rectangular") {
-  # X is assumed to be a g-dimensional array or matrix
-  #   n1 = number of columns, n2 = number of rows
-  #   and g = length(dim(X)) is presumably 2
+Tapered_Sep_Autocovariance_Kron_cpp = function(X, c=1, l=1, type = "rectangular"){
   
-  if(is.vector(L) == F){
-    stop("L must be a vector containing different bandwidths per spatial
-         dimension.")
-  }
-    
-    
-  n1 = ncol(X)
-  n2 = nrow(X)
-  g  = length(dim(X))   # number of dimensions
-
-  # placeholders
-  kappas_sep       = vector("list", g)
-  cov_sep          = vector("list", g)
-  tapered_cov_sep  = vector("list", g)
+  result_cpp = tapered_sep_autocovariance_cpp(X, c, l, type)
   
-  #   C_00 is the variance at lag=0,
-
-  C_00 = SpatialAutoCov(X, rep(0, g))
+  # Extract the tapered covariance list from the C++ output.
+  tapered_cov_sep = result_cpp$tapered_cov_sep
   
-  # We'll create matrices kappa_sep_mat, C_sep_mat to store dimension-r slices
-  kappa_sep_mat = matrix(NA, nrow = n2, ncol = n1)
-  C_sep_mat     = matrix(NA, nrow = n2, ncol = n1)
+  # Determine the number of separable dimensions (typically, g = length(dim(X))).
+  g = length(tapered_cov_sep)
   
-  # Loop over each dimension r in 1..g
-  for(r in seq_len(g)) {
-    for(i in seq_len(n1)) {
-      for(j in seq_len(n2)) {
-        # hvec: a g-dimensional vector of zeros
-        hvec = rep(0, g)
-        # only dimension r changes: hvec[r] = i-j
-        hvec[r] = i - j
-        
-        # Apply dimension-wise product taper
-        kappa_sep_mat[i, j] = flat_top_taper(xvec = hvec,
-                                             c     = c,
-                                             l     = L[r],    
-                                             type  = type)
-        
-        C_sep_mat[i, j] = SpatialAutoCov(X, hvec)
-      }
-    }
-    
-    kappas_sep[[r]]       = kappa_sep_mat
-    cov_sep[[r]]          = C_00^(-(g-1)) * C_sep_mat
-    tapered_cov_sep[[r]]  = kappa_sep_mat * C_sep_mat
-  }
   
-  # Then you do your Kronecker product over all dimensions:
   KronTaperCov = tapered_cov_sep[[g]]
-  for(r in seq.int(g-1, 1, by=-1)) {
+  for(r in (g-1):1){
     KronTaperCov = kronecker(KronTaperCov, tapered_cov_sep[[r]])
   }
-  
-  return(list(KronTaperCov     = KronTaperCov,
-              kappas_sep      = kappas_sep,
-              cov_sep         = cov_sep,
-              tapered_cov_sep = tapered_cov_sep))
+  return(list(KronTaperCov = KronTaperCov,
+              kappas_sep = result_cpp$kappas_sep,
+              cov_sep = result_cpp$cov_sep,
+              tapered_cov_sep = result_cpp$tapered_cov_sep))
 }
+
+
+
+# Tapered_Sep_Autocovariance_Kron_v2 = function(X, c=1, L=c(1,1),
+#                                            type = "rectangular") {
+#   # X is assumed to be a g-dimensional array or matrix
+#   #   n1 = number of columns, n2 = number of rows
+#   #   and g = length(dim(X)) is presumably 2
+#   
+#   if(is.vector(L) == F){
+#     stop("L must be a vector containing different bandwidths per spatial
+#          dimension.")
+#   }
+#     
+#     
+#   n1 = ncol(X)
+#   n2 = nrow(X)
+#   g  = length(dim(X))   # number of dimensions
+# 
+#   # placeholders
+#   kappas_sep       = vector("list", g)
+#   cov_sep          = vector("list", g)
+#   tapered_cov_sep  = vector("list", g)
+#   
+#   #   C_00 is the variance at lag=0,
+# 
+#   C_00 = SpatialAutoCov(X, rep(0, g))
+#   
+#   # We'll create matrices kappa_sep_mat, C_sep_mat to store dimension-r slices
+#   kappa_sep_mat = matrix(NA, nrow = n2, ncol = n1)
+#   C_sep_mat     = matrix(NA, nrow = n2, ncol = n1)
+#   
+#   # Loop over each dimension r in 1..g
+#   for(r in seq_len(g)) {
+#     for(i in seq_len(n1)) {
+#       for(j in seq_len(n2)) {
+#         # hvec: a g-dimensional vector of zeros
+#         hvec = rep(0, g)
+#         # only dimension r changes: hvec[r] = i-j
+#         hvec[r] = i - j
+#         
+#         # Apply dimension-wise product taper
+#         kappa_sep_mat[i, j] = flat_top_taper(xvec = hvec,
+#                                              c     = c,
+#                                              l     = L[r],    
+#                                              type  = type)
+#         
+#         C_sep_mat[i, j] = SpatialAutoCov(X, hvec)
+#       }
+#     }
+#     
+#     kappas_sep[[r]]       = kappa_sep_mat
+#     cov_sep[[r]]          = C_00^(-(g-1)) * C_sep_mat
+#     tapered_cov_sep[[r]]  = kappa_sep_mat * C_sep_mat
+#   }
+#   
+#   # Then you do your Kronecker product over all dimensions:
+#   KronTaperCov = tapered_cov_sep[[g]]
+#   for(r in seq.int(g-1, 1, by=-1)) {
+#     KronTaperCov = kronecker(KronTaperCov, tapered_cov_sep[[r]])
+#   }
+#   
+#   return(list(KronTaperCov     = KronTaperCov,
+#               kappas_sep      = kappas_sep,
+#               cov_sep         = cov_sep,
+#               tapered_cov_sep = tapered_cov_sep))
+# }
 
 
 
