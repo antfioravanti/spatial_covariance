@@ -1,5 +1,7 @@
 #-------------------------------------------------------------------------------
-### SPATIAL PROCESS SIMULATION - PARALLEL MULTIPLE SAMPLES###
+### SPATIAL PROCESS SIMULATION
+# PARALLEL with MULTIPLE SAMPLES and C++ FUNCTIONS ###
+# 
 #-------------------------------------------------------------------------------
 options(scipen = 5) # some decimals, set to 999 for max decimals
 #options(scipen = 0) # scientific display
@@ -25,6 +27,7 @@ source("R/utils.R") # General functions
 source("R/covariance_funs.R") # Analytical covariances
 source("R/estimators.R") # Estimators
 source("R/plotting.R")  # Plotting functions
+sourceCpp("src/estimators.cpp")
 #-------------------------------------------------------------------------------
 # ONE SIMULATION
 #-------------------------------------------------------------------------------
@@ -63,30 +66,25 @@ run_one_simulation = function(grid_size = 10,
   nvec = c(grid_size, grid_size)
   N = prod(nvec)
   
-  M_ij_list = vector("list", N*N)
-  for(i in 1:N){
-    for(j in 1:N){
-      M_ij_list[[(i-1)*N + j]] = compute_m_values(i, j, nvec,
-                                                  flipsign = TRUE,
-                                                  flipposition = TRUE)
-    }
-  }
-  M_ij_matrix = do.call(rbind, M_ij_list)
+  M_ij_matrix = compute_M_matrix_cpp(N, nvec = nvec)
   
   # 3) Compute all sample autocovariances
-  C_ij_vector = sapply(seq_len(nrow(M_ij_matrix)), 
-                       function(idx) SpatialAutoCov(X, M_ij_matrix[idx, ]))
+  C_ij_vector = compute_autocovariance_vector_cpp(X, M_ij_matrix)
   
   # Construct the autocovariance matrix
   C_ij_matrix = matrix(C_ij_vector, nrow = N, ncol = N)
   
-  # 4) Normalize by variance C_00
-  C_00    = SpatialAutoCov(X, c(0,0))
-  GammaEst = C_ij_matrix / C_00 # ?????
+  # Lag 0,0 autocovariance
+  C_00    = SpatialAutoCov_cpp(X, c(0,0))
+  # Autocovariance Matrix
+  GammaEst = C_ij_matrix 
+  # Autocorrelation matrix
+  corrMat = C_ij_matrix / C_00
+  
   
   # 5) Select empirical bandwidth for each dimension
-  Lvals = bandwidth_selection_spatial(
-    corrMat = GammaEst,
+  Lvals = bandwidth_selection_spatial_cpp(
+    corrMat = corrMat,
     n1 = grid_size,
     n2 = grid_size,
     C0 = 2,
@@ -96,14 +94,8 @@ run_one_simulation = function(grid_size = 10,
   L = unlist(Lvals, use.names = FALSE)
   
   # 6) Compute Taper matrix
-  kappa_ij_vector = sapply(seq_len(nrow(M_ij_matrix)), function(idx) {
-    x_vec = M_ij_matrix[idx, ]  
-    flat_top_taper_multi(
-      x_vec, 
-      c    = c,
-      L    = L,   # c(l1, l2)
-      type = type)
-  })
+  kappa_ij_vector = compute_multi_taper_vector_cpp(M_ij_matrix, L,
+                                                   c=c, type=type)
   
   # Turn into matrix
   kappa_ij_matrix = matrix(kappa_ij_vector, nrow = N, ncol = N)
@@ -112,6 +104,8 @@ run_one_simulation = function(grid_size = 10,
   GammaEstTaper = kappa_ij_matrix * GammaEst
   
   # 8) Compute Separable Taper Estimator
+  # TODO: Implement in C++ the following function and then continue with 
+  # the migration
   SepResults = Tapered_Sep_Autocovariance_Kron_multi(
     X,
     L   = L,

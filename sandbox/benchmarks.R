@@ -33,7 +33,7 @@ set.seed(42)
 sigma = 1
 alpha = 1
 beta = 0
-grid_size = 50
+grid_size = 10
 n1 = grid_size
 n2 = grid_size
 nvec = c(grid_size, grid_size)
@@ -167,12 +167,12 @@ estCov_cpp_loop
 
 # Benchmark both versions
 benchmark_results = microbenchmark(
-  R_version = SpatialAutoCov_v2(spatial_process$X, hvec),
+  R_version = SpatialAutoCov(spatial_process$X, hvec),
   Cpp_version = SpatialAutoCov_cpp(spatial_process$X, hvec=hvec),
   Cpp_version_loop = SpatialAutoCov_cpp_loop(spatial_process$X,hvec=hvec),
   times = 10000
 )
-summary(benchmark_results)#
+print(benchmark_results)
 #-------------------------------------------------------------------------------
 # Compare the autocovariance computation for the whole M matrix
 
@@ -278,8 +278,26 @@ benchmark_results <- microbenchmark(
   times = 100  # number of repetitions; adjust as needed
 )
 print(benchmark_results)
+#-------------------------------------------------------------------------------
 
+compute_multi_taper_vector_R <- function(M_ij_matrix, L, c = 1, type = "rectangular") {
+  sapply(seq_len(nrow(M_ij_matrix)), function(idx) {
+    x_vec <- M_ij_matrix[idx, ]
+    flat_top_taper_multi(x_vec, c = c, L = L, type = type)
+  })
+}
 
+L <- c(1, 1)
+taper_vector_R <- compute_multi_taper_vector_R(M_ij_matrix, L, c = 1, type = "rectangular")
+taper_vector_CPP <- compute_multi_taper_vector_cpp(M_ij_matrix, L, c = 1, type = "rectangular")
+all.equal(taper_vector_R, taper_vector_CPP)
+
+benchmark_results <- microbenchmark(
+  R_version = compute_multi_taper_vector_R(M_ij_matrix, L, c = 1, type = "rectangular"),
+  CPP_version = compute_multi_taper_vector_cpp(M_ij_matrix, L, c = 1, type = "rectangular"),
+  times = 100
+)
+print(benchmark_results)
 #-------------------------------------------------------------------------------
 
 # Compare C++ and R Tapered preparation
@@ -547,7 +565,7 @@ for (comp in components) {
 benchmark_results <- microbenchmark(
   simulation_og = simulation_og(grid_size, params, l = 1, c = 1, type = "rectangular"),
   simulation_cpp = simulation_cpp(grid_size, params, l = 1, c = 1, type = "rectangular"),
-  times = 20
+  times = 2
 )
 
 print(benchmark_results)

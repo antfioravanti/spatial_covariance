@@ -156,14 +156,14 @@ List get_submatrices_cpp(NumericMatrix X, NumericVector hvec) {
 
 // [[Rcpp::export]]
 double flat_top_taper_cpp(NumericVector xvec,
-                          double c = 1.0,
                           double l = 1.0,
+                          double c = 1.0,
                           double b = 0.5,
                           std::string type = "rectangular"){
     // Parameters:
     // xvec - vector of lags
-    // c - taper parameter
     // l - taper bandwidth
+    // c - taper parameter
     // b - differential taper parameter only
     // type - taper type
 
@@ -241,11 +241,11 @@ double flat_top_taper_cpp(NumericVector xvec,
 }
 
 // [[Rcpp::export]]
-NumericVector compute_taper_vector_cpp(NumericMatrix M_ij_matrix, 
-                                         double c, 
-                                         double l,
-                                         double b = 0.5,
-                                         std::string type = "rectangular") {
+NumericVector compute_taper_vector_cpp(NumericMatrix M_ij_matrix,
+                                        double l,
+                                        double c, 
+                                        double b = 0.5,
+                                        std::string type = "rectangular") {
   int n = M_ij_matrix.nrow();            // number of rows in the matrix
   NumericVector kappa_ij(n);             // output vector
   
@@ -256,10 +256,73 @@ NumericVector compute_taper_vector_cpp(NumericMatrix M_ij_matrix,
     NumericVector row = M_ij_matrix(i, _);
     
     // Compute the taper for this row using your flat_top_taper_cpp function.
-    kappa_ij[i] = flat_top_taper_cpp(row, c = c, l = l, b = b, type = type);
+    kappa_ij[i] = flat_top_taper_cpp(row, l, c, b, type);
   }
   
   return kappa_ij;
+}
+
+
+// [[Rcpp::export]]
+double flat_top_taper_1d_cpp(double x_scalar,
+                             double l = 1.0,   
+                             double c = 1.0,
+                             std::string type = "rectangular") {
+    // Scale the lag
+    double x_scaled = x_scalar / l;
+    double kappa = 0.0;
+    
+    if (type == "rectangular") {
+      // Rectangular kernel: 1 if |x_scaled| <= c, otherwise 0
+      kappa = (std::abs(x_scaled) <= c) ? 1.0 : 0.0;
+    } else if (type == "trapezoid") {
+      // Trapezoid kernel: max(min(c - |x_scaled|, 1), 0)
+      double val = c - std::abs(x_scaled);
+      kappa = std::max(std::min(val, 1.0), 0.0);
+    } else {
+      Rcpp::stop("type must be 'rectangular' or 'trapezoid'.");
+    }
+    
+    return kappa;
+  }
+
+  // [[Rcpp::export]]
+double flat_top_taper_multi_cpp(NumericVector x_vec,
+                                NumericVector L,
+                                double c = 1,
+                                std::string type = "rectangular") {
+    int d = x_vec.size();
+    
+    if (L.size() != d) {
+      Rcpp::stop("Length of L must match the length of x_vec.");
+    }
+    
+    double product_kappa = 1.0;
+    for (int i = 0; i < d; i++) {
+      double kappa_i = flat_top_taper_1d_cpp(x_vec[i], L[i], c, type);
+      product_kappa *= kappa_i;
+    }
+    
+    return product_kappa;
+  }
+
+
+  // [[Rcpp::export]]
+NumericVector compute_multi_taper_vector_cpp(NumericMatrix M_ij_matrix,
+                                        NumericVector L,
+                                        double c = 1,
+                                        std::string type = "rectangular") {
+    int n = M_ij_matrix.nrow();
+    NumericVector out(n);
+
+    for (int i = 0; i < n; i++) {
+    // Extract the i-th row as a vector.
+    NumericVector x_vec = M_ij_matrix(i, _);
+    // Compute the multi-dimensional taper using flat_top_taper_multi.
+    out[i] = flat_top_taper_multi_cpp(x_vec, L, c, type);
+    }
+
+    return out;
 }
 
 //-----------------------------------------------------------------------------
@@ -609,3 +672,7 @@ List bandwidth_selection_spatial_cpp(NumericMatrix corrMat,
   
   return List::create(Named("l1") = l1, Named("l2") = l2);
 }
+
+
+// TODO: Implement  Tapered_Sep_Autocovariance_Kron_v2 which is the 
+// multi tapered one (with more than one l)
