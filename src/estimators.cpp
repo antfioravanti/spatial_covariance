@@ -558,6 +558,91 @@ List tapered_sep_autocovariance_cpp(NumericMatrix X,
   );
 }
 
+
+
+// [[Rcpp::export]]
+List tapered_sep_auto_multi_cpp(NumericMatrix X,
+                                double c = 1,
+                                NumericVector L = NumericVector::create(1, 1),
+                                std::string type = "rectangular") {
+
+  // Check that L is a vector (it should have length equal to the number of spatial dimensions)
+  if (L.size() < 1) {
+    stop("L must be a vector containing bandwidths per spatial dimension.");
+  }
+
+  // Get dimensions. In R, X is assumed to have a dim attribute.
+  IntegerVector dims = X.attr("dim");
+  int g = dims.size(); // number of dimensions (for a matrix, g=2)
+
+  int n1 = X.ncol(); // number of columns
+  int n2 = X.nrow(); // number of rows
+
+  // Compute C(0,0) = SpatialAutoCov(X, rep(0, g))
+  NumericVector zeros(g, 0.0);
+  double C_00 = SpatialAutoCov_cpp(X, zeros);
+
+  // Prepare lists to hold the r-specific matrices
+  List kappas_sep(g);       // taper matrices
+  List cov_sep(g);          // covariance matrices
+  List tapered_cov_sep(g);  // tapered covariance matrices
+
+  // Temporary matrices to be re-used for each spatial dimension r.
+  NumericMatrix kappa_sep_mat(n2, n1);
+  NumericMatrix C_sep_mat(n2, n1);
+
+  // Loop over each spatial coordinate 
+  // (r = 0, …, g-1, corresponding to r=1,...,g in R)
+
+  for(int r = 0; r < g; r++){
+    for(int i = 0; i < n1; i++){ // In the R code, i runs from 1 to n1 (ncol)
+      for(int j = 0; j < n2; j++){ // In the R code, i runs from 1 to n1 (nrow)
+        // Create a lag vector hvec of length g (all zeros)
+        NumericVector hvec(g, 0.0);
+        // In the original R code: hvec[r] = i - j (with R’s 1-indexing)
+        // Here we mimic that by setting:
+        hvec[r] = (i - j);
+        // Compute the taper weight 
+        // NOTE: we are using the scalar version of flat_top_taper_cpp
+        // because we need a differnt taper function for each
+        // spatial dimension.
+        kappa_sep_mat(j, i) = flat_top_taper_cpp(hvec, L[r], c, 0.5, type);
+        // Compute the spatial autocovariance for lag vector hvec.
+        C_sep_mat(j, i) = SpatialAutoCov_cpp(X, hvec);
+      }
+    }
+    // Save the computed taper matrix.
+    kappas_sep[r] = clone(kappa_sep_mat);
+
+    // Compute cov_sep as: C_00^( -(g-1) ) * C_sep_mat
+    double factor = std::pow(C_00, -(g - 1));
+    NumericMatrix cov_mat(n2, n1);
+    for (int i = 0; i < n2; i++) {
+      for (int j = 0; j < n1; j++) {
+        cov_mat(i, j) = factor * C_sep_mat(i, j);
+      }
+    }
+    cov_sep[r] = cov_mat;
+  
+
+  NumericMatrix tapered_mat(n2, n1);
+  for(int i = 0; i < n2; i++){
+    for(int j = 0; j < n1; j++){
+      tapered_mat(i, j) = kappa_sep_mat(i, j) * C_sep_mat(i, j);
+    }
+  }
+  tapered_cov_sep[r] = tapered_mat;
+
+} 
+  
+// Return a list with the three components.
+return List::create(
+  Named("kappas_sep") = kappas_sep,
+  Named("cov_sep") = cov_sep,
+  Named("tapered_cov_sep") = tapered_cov_sep
+  );
+}
+
 //-----------------------------------------------------------------------------
 // BANDWIDTH SELECTION
 //-----------------------------------------------------------------------------
@@ -676,3 +761,4 @@ List bandwidth_selection_spatial_cpp(NumericMatrix corrMat,
 
 // TODO: Implement  Tapered_Sep_Autocovariance_Kron_v2 which is the 
 // multi tapered one (with more than one l)
+

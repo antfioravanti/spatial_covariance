@@ -569,4 +569,27 @@ benchmark_results <- microbenchmark(
 )
 
 print(benchmark_results)
+#-------------------------------------------------------------------------------
+# COMPARE TAPERED SEP AUTOCOVARIANCE MULLTIPLE KRONECKER
+
+resR = Tapered_Sep_Autocovariance_Kron_multi(X, c=1, L=c(1,1),
+                type = "rectangular")
+
+rescpp = Tapered_Sep_Autocovariance_Kron_multi_cpp(X, c=1, L=c(1,1),
+                                                   type = "rectangular")
+
+Kron_CPP <- rescpp$KronTaperCov
+Kron_R <- resR$KronTaperCov
+all.equal(Kron_R, Kron_CPP)
+
+benchmark_results <- microbenchmark(
+  R_version   = Tapered_Sep_Autocovariance_Kron_multi(X, c=1, L=c(1,1),
+                                                      type = "rectangular"),
+  
+  CPP_version = Tapered_Sep_Autocovariance_Kron_multi_cpp(X, c=1, L=c(1,1),
+                                                          type = "rectangular"),
+  
+  times = 50
+)
+print(benchmark_results)
 

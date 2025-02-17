@@ -541,6 +541,36 @@ Tapered_Sep_Autocovariance_Kron_multi = function(X, c=1, L=c(1,1),
 
 
 
+Tapered_Sep_Autocovariance_Kron_multi_cpp = function(X, c=1, L=c(1,1),
+                                                     type = "rectangular") {
+  
+  if (!is.vector(L)) {
+    stop("L must be a vector containing different bandwidths 
+         per spatial dimension.")
+  }
+  
+  result_list_cpp = tapered_sep_auto_multi_cpp(X=X,
+                                              c=c,
+                                              L=L,
+                                              type=type)
+    
+  # Extract the list of tapered covariance matrices
+  tapered_cov_sep <- result_list_cpp$tapered_cov_sep
+  # Determine the number of spatial dimensions
+  g <- length(tapered_cov_sep)
+  
+  # Start with the tapered covariance for the last dimension
+  KronTaperCov <- tapered_cov_sep[[g]]
+  # Then, combine via Kronecker product in reverse order
+  if (g > 1) {
+    for (r in seq.int(g - 1, 1, by = -1)) {
+      KronTaperCov <- kronecker(KronTaperCov, tapered_cov_sep[[r]])
+    }
+  }
+  
+  return(list(result_list_cpp, KronTaperCov = KronTaperCov))
+}
+
 #-------------------------------------------------------------------------------
 # ADAPTIVE BANDWIDTH SELECTION
 #-------------------------------------------------------------------------------
