@@ -68,7 +68,7 @@ NumericVector compute_m0_values_cpp(int i, int j, int d = 1){
 
 // [[Rcpp::export]]
 NumericVector compute_m_values_cpp(int i, int j, NumericVector nvec, 
-                                   int d =1,
+                                   int d = 1,
                                    bool flipsign = true, 
                                    bool flipposition = true){
     
@@ -156,10 +156,10 @@ List get_submatrices_cpp(NumericMatrix X, NumericVector hvec) {
 
 // [[Rcpp::export]]
 double flat_top_taper_cpp(NumericVector xvec,
-                          double l = 1.0,
-                          double c = 1.0,
-                          double b = 0.5,
-                          std::string type = "rectangular"){
+                          double l,
+                          double c,
+                          std::string type,
+                          double b = 0.5){
     // Parameters:
     // xvec - vector of lags
     // l - taper bandwidth
@@ -243,9 +243,9 @@ double flat_top_taper_cpp(NumericVector xvec,
 // [[Rcpp::export]]
 NumericVector compute_taper_vector_cpp(NumericMatrix M_ij_matrix,
                                         double l,
-                                        double c, 
-                                        double b = 0.5,
-                                        std::string type = "rectangular") {
+                                        double c,
+                                        std::string type,
+                                        double b = 0.5) {
   int n = M_ij_matrix.nrow();            // number of rows in the matrix
   NumericVector kappa_ij(n);             // output vector
   
@@ -256,7 +256,7 @@ NumericVector compute_taper_vector_cpp(NumericMatrix M_ij_matrix,
     NumericVector row = M_ij_matrix(i, _);
     
     // Compute the taper for this row using your flat_top_taper_cpp function.
-    kappa_ij[i] = flat_top_taper_cpp(row, l, c, b, type);
+    kappa_ij[i] = flat_top_taper_cpp(row, l, c, type, b);
   }
   
   return kappa_ij;
@@ -265,9 +265,9 @@ NumericVector compute_taper_vector_cpp(NumericMatrix M_ij_matrix,
 
 // [[Rcpp::export]]
 double flat_top_taper_1d_cpp(double x_scalar,
-                             double l = 1.0,   
-                             double c = 1.0,
-                             std::string type = "rectangular") {
+                             double l,   
+                             double c,
+                             std::string type) {
     // Scale the lag
     double x_scaled = x_scalar / l;
     double kappa = 0.0;
@@ -289,8 +289,8 @@ double flat_top_taper_1d_cpp(double x_scalar,
   // [[Rcpp::export]]
 double flat_top_taper_multi_cpp(NumericVector x_vec,
                                 NumericVector L,
-                                double c = 1,
-                                std::string type = "rectangular") {
+                                double c,
+                                std::string type) {
     int d = x_vec.size();
     
     if (L.size() != d) {
@@ -310,8 +310,8 @@ double flat_top_taper_multi_cpp(NumericVector x_vec,
   // [[Rcpp::export]]
 NumericVector compute_multi_taper_vector_cpp(NumericMatrix M_ij_matrix,
                                         NumericVector L,
-                                        double c = 1,
-                                        std::string type = "rectangular") {
+                                        double c,
+                                        std::string type) {
     int n = M_ij_matrix.nrow();
     NumericVector out(n);
 
@@ -476,12 +476,11 @@ NumericMatrix kroneckerProduct_cpp(const NumericMatrix& A,
 
 // Kronecker Estimator Part 1
 
-
 // [[Rcpp::export]]
 List tapered_sep_autocovariance_cpp(NumericMatrix X, 
-                                    double c = 1.0, 
-                                    double l = 1.0, 
-                                    std::string type = "rectangular") {
+                                    double c, 
+                                    double l, 
+                                    std::string type) {
   // Get dimensions. In R, X is assumed to have a dim attribute.
   IntegerVector dims = X.attr("dim");
   int g = dims.size();  // e.g., typically 2 for a matrix; can be >2 if X is an array.
@@ -520,7 +519,7 @@ List tapered_sep_autocovariance_cpp(NumericMatrix X,
         // Here we mimic that by setting:
         hvec[r] = (i - j);
         // Compute the taper weight using your C++ taper function.
-        kappa_sep_mat(j, i) = flat_top_taper_cpp(hvec, c, l, 0.5, type);
+        kappa_sep_mat(j, i) = flat_top_taper_cpp(hvec, c, l, type, 0.5);
         // Compute the spatial autocovariance for lag vector hvec.
         C_sep_mat(j, i) = SpatialAutoCov_cpp(X, hvec);
       }
@@ -562,9 +561,9 @@ List tapered_sep_autocovariance_cpp(NumericMatrix X,
 
 // [[Rcpp::export]]
 List tapered_sep_auto_multi_cpp(NumericMatrix X,
-                                double c = 1,
-                                NumericVector L = NumericVector::create(1, 1),
-                                std::string type = "rectangular") {
+                                double c ,
+                                NumericVector L,
+                                std::string type) {
 
   // Check that L is a vector (it should have length equal to the number of spatial dimensions)
   if (L.size() < 1) {
@@ -606,7 +605,7 @@ List tapered_sep_auto_multi_cpp(NumericMatrix X,
         // NOTE: we are using the scalar version of flat_top_taper_cpp
         // because we need a differnt taper function for each
         // spatial dimension.
-        kappa_sep_mat(j, i) = flat_top_taper_cpp(hvec, L[r], c, 0.5, type);
+        kappa_sep_mat(j, i) = flat_top_taper_cpp(hvec, L[r], c, type,);
         // Compute the spatial autocovariance for lag vector hvec.
         C_sep_mat(j, i) = SpatialAutoCov_cpp(X, hvec);
       }
@@ -647,11 +646,8 @@ return List::create(
 // BANDWIDTH SELECTION
 //-----------------------------------------------------------------------------
 
-
-
-
 // [[Rcpp::export]]
-List bandwidth_selection_spatial_cpp(NumericMatrix corrMat,
+List bandwidth_selection_spatial_cpp_v1(NumericMatrix corrMat,
                                      int n1, int n2, 
                                      double C0 = 2, double c_ef = 1) {
 
@@ -759,6 +755,80 @@ List bandwidth_selection_spatial_cpp(NumericMatrix corrMat,
 }
 
 
-// TODO: Implement  Tapered_Sep_Autocovariance_Kron_v2 which is the 
-// multi tapered one (with more than one l)
+
+// [[Rcpp::export]]
+List bandwidth_selection_spatial_cpp_v2(NumericMatrix X,
+                                     int n1, int n2, 
+                                     double C0 = 2, double c_ef = 1) {
+
+  // 1) Compute C_00 (the autocovariance at lag (0,0))
+  NumericVector zeroLag = NumericVector::create(0.0, 0.0);
+  double C_00 = SpatialAutoCov_cpp(X, zeroLag);
+
+  // 2) Compute dim 1 autocovariances with h = (h1, 0)
+  int offset_1 = n1 - 1;   // This maps lag = -(nrow-1) to index 0.
+  std::vector<double> d1Rhos(2 * (n1 - 1) + 1, 0.0);
+  for (int lag = -(n1 - 1); lag <= (n1 - 1); lag++) {
+    int idx = lag + offset_1; // Convert lag to 0-based index.
+    NumericVector lagVec = NumericVector::create(lag, 0.0);
+    d1Rhos[idx] = SpatialAutoCov_cpp(X, lagVec) / C_00;
+  }
+
+  // 3) Compute dim 2 autocovariances with h = (0, h2)
+  int offset_2 = n2 - 1;   // This maps lag = -(ncol-1) to index 0.
+  std::vector<double> d2Rhos(2 * (n2 - 1) + 1, 0.0);
+  for (int lag = -(n2 - 1); lag <= (n2 - 1); lag++) {
+    int idx = lag + offset_2; // Convert lag to 0-based index.
+    NumericVector lagVec = NumericVector::create(0.0, lag);
+    d2Rhos[idx] = SpatialAutoCov_cpp(X, lagVec) / C_00;
+  }
+
+  
+// 4) Remove duplicated entries and sort in decreasing order
+  std::vector<double> d1Rhos_sorted = d1Rhos;
+  std::sort(d1Rhos_sorted.begin(), d1Rhos_sorted.end(), std::greater<double>());
+  d1Rhos_sorted.erase(std::unique(d1Rhos_sorted.begin(),
+                      d1Rhos_sorted.end()),
+                      d1Rhos_sorted.end());
+
+  std::vector<double> d2Rhos_sorted = d2Rhos;
+  std::sort(d2Rhos_sorted.begin(), d2Rhos_sorted.end(), std::greater<double>());
+  d2Rhos_sorted.erase(std::unique(d2Rhos_sorted.begin(),
+                      d2Rhos_sorted.end()),
+                       d2Rhos_sorted.end());
+
+  // 4) Politis-style cutoff function: find smallest q such that for m = 0,..,K_T,
+  //    |rho_vec[q+m]| < threshold.
+  auto find_q_1d = [&](const std::vector<double>& rho_vec,
+                       double threshold, int K_T) -> int {
+    int max_lag = rho_vec.size() - 1;
+    for (int q = 0; q <= max_lag; q++) {
+      bool ok = true;
+      for (int m = 0; m <= K_T; m++) {
+        int qm = q + m;
+        if (qm > max_lag) break;
+        if (std::abs(rho_vec[qm]) >= threshold) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) return q;
+    }
+    return max_lag;
+  };
+
+  // 5) Find q1 and q2
+  double threshold = C0 * std::sqrt(std::log10(static_cast<double>(n1 * n2)) / (n1 * n2));
+  int K_T = std::max(5, static_cast<int>(std::sqrt(std::log10(static_cast<double>(n1 * n2)))));
+
+  int q1 = find_q_1d(d1Rhos_sorted, threshold, K_T);
+  int q2 = find_q_1d(d2Rhos_sorted, threshold, K_T);
+
+  // 6) Compute l1 and l2
+  int l1 = std::max(static_cast<int>(std::ceil(q1 / c_ef)), 1);
+  int l2 = std::max(static_cast<int>(std::ceil(q2 / c_ef)), 1);
+
+  return List::create(Named("l1") = l1, Named("l2") = l2);
+}
+
 

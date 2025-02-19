@@ -29,8 +29,8 @@ set.seed(42)
 
 # GENERATING GRID
 # Define the dimensions of the 2D grid
-n1 = 20 # Dimension 1 size 
-n2 = 20 # Dimension 2 size
+n1 = 5 # Dimension 1 size 
+n2 = 5 # Dimension 2 size
 nvec = c(n1, n2)
 N = prod(nvec) 
 # Generate spatial locations/coordinates of integers
@@ -170,14 +170,14 @@ for(i in 1:N){
 M_ij_matrix = do.call(rbind, M_ij_list)
 # ------------------------------------------------------------------------------
 # DEMONSTRATION OF THE EMPIRICAL BANDWIDTH SELCTION RULE
-grid_size = 30
+grid_size = 5
 n1 = grid_size
 n2 = grid_size
 nvec = c(grid_size, grid_size)
 N = prod(nvec)
 alpha = 1
-lambda = 18
-beta = 1
+lambda = 5
+beta = 0
 # Taper parameters
 type = "rectangular"
 c = 1
@@ -231,8 +231,10 @@ C_ij_matrix = matrix(C_ij_vector, nrow=N, ncol=N)
 C_00 = SpatialAutoCov(X, c(0,0))
 
 # Compute regular GammaEst matrix normalized with C_00
-GammaEst = C_ij_matrix / C_00
+GammaEst = C_ij_matrix
 
+RhoEst = GammaEst/C_00
+plot_matrix(GammaEst)
 # Empirical rule for selecting bandwidth
 select_bandwidth_empirical = function(GammaEst,
                                        N,
@@ -837,3 +839,211 @@ Taper_matrix = apply(M_ij_matrix, 1, function(m_ij) flat_top_taper(m_ij, c=c, l=
 # Reshape Taper_matrix and compute GammaEstTapered
 Taper_matrix = matrix(Taper_matrix, nrow=N, ncol=N)
 GammaEstTapered = Taper_matrix * (C_ij_matrix / C_00)
+
+
+#-------------------------------------------------------------------------------
+sigma = 1
+grid_size = 5
+n1 = grid_size
+n2 = grid_size
+nvec = c(grid_size, grid_size)
+N = prod(nvec)
+alpha = 1
+lambda = 5
+beta = 0
+# Taper parameters
+type = "rectangular"
+c = 1
+
+params = list(sigma,
+              alpha1 = alpha,
+              alpha2 = alpha,
+              lambda1 = lambda,
+              lambda2 = lambda,
+              beta = beta,
+              test_sep= F)
+
+spatial_process = simulate_spatial_process(
+  covariance_function = ModifiedExponentialCovariance,
+  grid_size = grid_size,
+  params = params,
+  seed = 42)
+# Spatial Process
+X = spatial_process$X
+# True Covariance
+true_cov = spatial_process$covariance
+
+# Plotting the Simulated Matrix
+plot_matrix(X, main = "Spatial Process")
+# Plotting the respective True Covariance
+plot_matrix(true_cov, main = "True Covariance")
+
+
+# 2) Computing M Matrix for lags corrected with the m functions
+M_ij_matrix = compute_M_matrix_cpp(N, nvec = nvec)
+
+# 3) Compute all autocovariances
+C_ij_vector = compute_autocovariance_vector_cpp(X, M_ij_matrix)
+
+# Reshape back to a Matrix
+C_ij_matrix = matrix(C_ij_vector, nrow=N, ncol=N, byrow=T)
+
+# Compute Autocovariance lag 0,0
+C_00 = SpatialAutoCov_cpp(X, c(0,0))
+
+# Naive Autocovariance Estimator
+GammaEst = C_ij_matrix
+
+plot_matrix(GammaEst, main = "Estimated Covariance")
+# Naive Autocorrelation Estimator
+RhoEst = C_ij_matrix / C_00
+plot_matrix(RhoEst, main = "Estimated Correlation")
+
+
+C_00 = SpatialAutoCov_cpp(X, c(0,0))
+n1 = dim(X)[2]
+n2 = dim(X)[1]
+
+rowRhos <- numeric(2*(n2-1) + 1) 
+for(lag in -(n2-1):(n2-1)){
+  rowRhos[lag + n2] = SpatialAutoCov_cpp(X, c(lag,0) ) / C_00
+
+}
+
+
+colRhos <- numeric(2*(n1-1) + 1) 
+for(lag in -(n1-1):(n1-1)){
+  colRhos[lag + n1] = SpatialAutoCov_cpp(X, c(0,lag) ) / C_00
+  
+}
+
+
+rowRhos_sorted = sort(unique(rowRhos), decreasing = T)
+colRhos_sorted = sort(unique(colRhos), decreasing = T)
+
+
+find_q_1d = function(rho_vec, threshold, K_T) {
+  max_lag = length(rho_vec) - 1
+  for(q in 0:max_lag) {
+    ok = TRUE
+    for(m in 0:K_T) {
+      qm = q + m
+      if(qm > max_lag) break
+      if(abs(rho_vec[qm + 1]) >= threshold) {
+        ok = FALSE
+        break
+      }
+    }
+    if(ok) return(q)
+  }
+  return(max_lag)
+}
+
+
+
+
+# ------------------------------------------------------------------
+# 5) Apply threshold => find q1, q2
+# ------------------------------------------------------------------
+threshold_val = C0 * sqrt(log10(N) / N)
+K_T = max(5, sqrt(log10(N)))
+q1 = find_q_1d(rowRhos_sorted, threshold_val, K_T)
+q2 = find_q_1d(colRhos_sorted, threshold_val, K_T)
+
+# ------------------------------------------------------------------
+# 6) Convert q1, q2 into final product-kernel bandwidths (l1,l2)
+# ------------------------------------------------------------------
+l1 = max(ceiling(q1 / c_ef), 1)
+l2 = max(ceiling(q2 / c_ef), 1)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+corrMat = RhoEst
+get_row = function(k) ((k - 1) %/% n2) + 1
+get_col = function(k) ((k - 1) %%  n2) + 1
+
+
+
+rescorrVec <- data.frame(h = numeric(0),
+                         ri = numeric(0),
+                         ci = numeric(0),
+                         rj = numeric(0),
+                         cj = numeric(0),
+                         i = numeric(0),
+                         j = numeric(0),
+                         corr = numeric(0))
+
+
+rowCorrVec = numeric(n1)  # rowCorrVec[h+1] = average correlation at lag h
+for(h in 0:(n1-1)) {
+  ss = 0
+  count = 0
+  # loop over all pairs (i,j)
+  for(i in 1:N) {
+    ri = get_row(i)
+    ci = get_col(i)
+    # We require all the columns j such that 
+    # row(i)-row(j)=h1 and col(i)=col(j) i.e. h2=0
+    rj = ri - h
+    cj = ci
+    # check if valid
+    if(rj >= 1 && rj <= n1) {
+      # translate (rj, cj) back to index j
+      j = (rj - 1)*n2 + cj
+      # accumulate
+      ss = ss + corrMat[i, j]
+      count = count + 1
+      
+      iterdf = data.frame(h = h,
+                          ri = ri,
+                          ci = ci,
+                          rj = rj,
+                          cj = cj,
+                          i = i,
+                          j = j,
+                          corr = corrMat[i, j])
+      
+      rescorrVec = rbind(rescorrVec, iterdf)
+    }
+  }
+  rowCorrVec[h+1] = if(count > 0) ss / count else 0
+}
+
+# ------------------------------------------------------------------
+# 3) Extract "pure column-lag" correlations, i.e.  rho(0, h2)
+#    colCorrVec[h+1] = average correlation at lag h (0..n2-1)
+#    row(i)=row(j), col(i)-col(j)=h2
+# ------------------------------------------------------------------
+colCorrVec = numeric(n2)
+for(h in 0:(n2-1)) {
+  ss = 0
+  count = 0
+  for(i in 1:N) {
+    ri = get_row(i)
+    ci = get_col(i)
+    # We require all the rows j such that 
+    # col(i)-col(j)=h2 and row(i)=row(j) i.e. h1=0
+    rj = ri
+    cj = ci - h
+    if(cj >= 1 && cj <= n2) {
+      j = (rj - 1)*n2 + cj
+      ss = ss + corrMat[i, j]
+      count = count + 1
+    }
+  }
+  colCorrVec[h+1] = if(count > 0) ss / count else 0
+}

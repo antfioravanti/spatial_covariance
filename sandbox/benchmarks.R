@@ -33,7 +33,7 @@ set.seed(42)
 sigma = 1
 alpha = 1
 beta = 0
-grid_size = 10
+grid_size = 20
 n1 = grid_size
 n2 = grid_size
 nvec = c(grid_size, grid_size)
@@ -406,72 +406,120 @@ print(benchmark_results)
 
 
 #-------------------------------------------------------------------------------
-simulation_og = function(grid_size, params, l = 1, c = 1, type = "rectangular"){
-    nvec = c(grid_size, grid_size)
-    g = length(nvec)
-    N = prod(nvec)
-    spatial_process = simulate_spatial_process(
+
+#-------------------------------------------------------------------------------
+# COMPARE TAPERED SEP AUTOCOVARIANCE MULLTIPLE KRONECKER
+
+resR = Tapered_Sep_Autocovariance_Kron_multi(X, c=1, L=c(1,1),
+                type = "rectangular")
+
+rescpp = Tapered_Sep_Autocovariance_Kron_multi_cpp(X, c=1, L=c(1,1),
+                                                   type = "rectangular")
+
+Kron_CPP <- rescpp$KronTaperCov
+Kron_R <- resR$KronTaperCov
+all.equal(Kron_R, Kron_CPP)
+
+benchmark_results <- microbenchmark(
+  R_version   = Tapered_Sep_Autocovariance_Kron_multi(X, c=1, L=c(1,1),
+                                                      type = "rectangular"),
+  
+  CPP_version = Tapered_Sep_Autocovariance_Kron_multi_cpp(X, c=1, L=c(1,1),
+                                                          type = "rectangular"),
+  
+  times = 50
+)
+print(benchmark_results)
+
+#-------------------------------------------------------------------------------
+simulation_og = function(grid_size, params, c, type){
+  nvec = c(grid_size, grid_size)
+  g = length(nvec)
+  N = prod(nvec)
+  spatial_process = simulate_spatial_process(
     covariance_function = ModifiedExponentialCovariance,
     grid_size = grid_size,
     params = params,
     seed = 42)
-    # Spatial Process
-    X = spatial_process$X
-    # True Covariance
-    true_cov = spatial_process$covariance
-    
-    # Computing M vector for correct lags
-    M_ij_matrix = compute_M_matrix(N, nvec = nvec)
-    
-    # Compute all autocovariances at once using vectorized form
-    # Use sapply to map through each row of the m_ij matrix
-    C_ij_vector = sapply(1:nrow(M_ij_matrix), 
+  # Spatial Process
+  X = spatial_process$X
+  # True Covariance
+  true_cov = spatial_process$covariance
+  
+  # Computing M vector for correct lags
+  M_ij_matrix = compute_M_matrix(N, nvec = nvec)
+  
+  # Compute all autocovariances at once using vectorized form
+  # Use sapply to map through each row of the m_ij matrix
+  C_ij_vector = sapply(1:nrow(M_ij_matrix), 
                        function(idx) SpatialAutoCov(X, M_ij_matrix[idx, ]))
-    
-    # Now reshape it back to a matrix form (filled by columns)
-    C_ij_matrix = matrix(C_ij_vector, nrow=N, ncol=N)
-    
-    # Compute Autocovariance lag 0,0
-    C_00 = SpatialAutoCov(X, c(0,0))
-    
-    # Compute regular GammaEst matrix normalized with C_00
-    GammaEst = C_ij_matrix
-    
-    RhoEst = C_ij_matrix / C_00
-    
-    # Compute Taper vector
-    kappa_ij_vector = sapply(1:nrow(M_ij_matrix), 
-                           function(idx) flat_top_taper(M_ij_matrix[idx, ],
-                                                        c=c, l=l, type = type))
-    # Compute taper matrix
-    kappa_ij_matrix = matrix(kappa_ij_vector, nrow=N, ncol=N)
-    
-    # Compute Tapered Covariance Matrix
-    GammaEstTaper = kappa_ij_matrix * GammaEst
-    
-    # Compute Separable Taper Estimator
-    SepResults= Tapered_Sep_Autocovariance_Kron(X, l=l, c=c, type=type)
-    GammaEstTaperSep = SepResults$KronTaperCov
-    
-    truecov_matrices = true_cov
-    cov_matrices = GammaEst
-    taper_matrices = kappa_ij_matrix
-    taper_covariances = GammaEstTaper
-    spectral_norm = norm(true_cov - GammaEst, type = "2")
-    spectral_norm_tap = norm(true_cov - GammaEstTaper, type = "2")
-    spectral_norm_sepkron = norm(true_cov - GammaEstTaperSep, type = "2")
-
-    return(list(truecov_matrices = truecov_matrices,
-                cov_matrices = cov_matrices,
-                RhoEst = RhoEst,
-                taper_matrices= taper_matrices,
-                spectral_norm = spectral_norm,
-                spectral_norm_tap = spectral_norm_tap,
-                spectral_norm_sepkron = spectral_norm_sepkron))
+  
+  # Now reshape it back to a matrix form (filled by columns)
+  C_ij_matrix = matrix(C_ij_vector, nrow=N, ncol=N)
+  
+  # Compute Autocovariance lag 0,0
+  C_00 = SpatialAutoCov(X, c(0,0))
+  
+  # Compute regular GammaEst matrix normalized with C_00
+  GammaEst = C_ij_matrix
+  
+  RhoEst = C_ij_matrix / C_00
+  
+  # 5) Select empirical bandwidth for each dimension
+  Lvals = bandwidth_selection_spatial(
+    corrMat = RhoEst,
+    n1 = grid_size,
+    n2 = grid_size,
+    C0 = 2,
+    c_ef = 1)
+  
+  # Turn it into a vector c(l1, l2)
+  L = unlist(Lvals, use.names = FALSE)
+  
+  # 6) Compute Taper matrix
+  kappa_ij_vector = sapply(seq_len(nrow(M_ij_matrix)), function(idx) {
+    x_vec = M_ij_matrix[idx, ]  
+    flat_top_taper_multi(
+      x_vec, 
+      c    = c,
+      L    = L,   # c(l1, l2)
+      type = type)
+  })
+  
+  # Turn into matrix
+  kappa_ij_matrix = matrix(kappa_ij_vector, nrow = N, ncol = N)
+  
+  # Compute Tapered Covariance Matrix
+  GammaEstTaper = kappa_ij_matrix * GammaEst
+  
+  # 8) Compute Separable Taper Estimator
+  SepResults = Tapered_Sep_Autocovariance_Kron_multi(
+    X,
+    L   = L,
+    c   = c,
+    type= type)
+  
+  GammaEstTaperSep = SepResults$KronTaperCov
+  
+  spectral_norm = norm(true_cov - GammaEst, type = "2")
+  spectral_norm_tap = norm(true_cov - GammaEstTaper, type = "2")
+  spectral_norm_sepkron = norm(true_cov - GammaEstTaperSep, type = "2")
+  
+  return(list(true_cov = true_cov,
+              GammaEst = GammaEst,
+              RhoEst = RhoEst,
+              taper_matrices= kappa_ij_matrix,
+              GammaEstTaper = GammaEstTaper,
+              GammaEstTaperSep = GammaEstTaperSep,
+              spectral_norm = spectral_norm,
+              spectral_norm_tap = spectral_norm_tap,
+              spectral_norm_sepkron = spectral_norm_sepkron,
+              L1Selected         = L[1],
+              L2Selected         = L[2]))
 }
 
 
-simulation_cpp = function(grid_size, params, l = 1, c = 1, type = "rectangular"){
+simulation_cpp = function(grid_size, params, c, type ){
   nvec = c(grid_size, grid_size)
   g = length(nvec)
   N = prod(nvec)
@@ -503,55 +551,82 @@ simulation_cpp = function(grid_size, params, l = 1, c = 1, type = "rectangular")
   
   RhoEst = C_ij_matrix / C_00
   
-  # Compute Taper vector
-  kappa_ij_vector = compute_taper_vector_cpp(M_ij_matrix, c=c, l=l, type = type)
   
-  # Compute taper matrix
-  kappa_ij_matrix = matrix(kappa_ij_vector, nrow=N, ncol=N)
+  # 5) Select empirical bandwidth for each dimension
+  Lvals = bandwidth_selection_spatial_cpp_v1(
+    corrMat = RhoEst,
+    n1 = grid_size,
+    n2 = grid_size,
+    C0 = 2,
+    c_ef = 1)
+  
+  # Turn it into a vector c(l1, l2)
+  L = unlist(Lvals, use.names = FALSE)
+  
+  # 6) Compute Taper matrix
+  kappa_ij_vector = compute_multi_taper_vector_cpp(M_ij_matrix,
+                                                   L = L,
+                                                   c ,
+                                                   type)
+  
+  # Turn into matrix
+  kappa_ij_matrix = matrix(kappa_ij_vector, nrow = N, ncol = N)
   
   # Compute Tapered Covariance Matrix
   GammaEstTaper = kappa_ij_matrix * GammaEst
   
-  # Compute Separable Taper Estimator
-  SepResults= Tapered_Sep_Autocovariance_Kron_cpp(X, l=l, c=c, type=type)
+  # 8) Compute Separable Taper Estimator
+  SepResults = Tapered_Sep_Autocovariance_Kron_multi_cpp(
+    X,
+    c   = c,
+    L   = L,
+    type= type)
+  
+  
   GammaEstTaperSep = SepResults$KronTaperCov
   
-  truecov_matrices = true_cov
-  cov_matrices = GammaEst
-  taper_matrices = kappa_ij_matrix
-  taper_covariances = GammaEstTaper
-  RhoEst = RhoEst
   spectral_norm = norm(true_cov - GammaEst, type = "2")
   spectral_norm_tap = norm(true_cov - GammaEstTaper, type = "2")
   spectral_norm_sepkron = norm(true_cov - GammaEstTaperSep, type = "2")
   
-  return(list(truecov_matrices = truecov_matrices,
-              cov_matrices = cov_matrices,
+  return(list(true_cov = true_cov,
+              GammaEst = GammaEst,
               RhoEst = RhoEst,
-              taper_matrices= taper_matrices,
+              taper_matrices= kappa_ij_matrix,
+              GammaEstTaper = GammaEstTaper,
+              GammaEstTaperSep = GammaEstTaperSep,
               spectral_norm = spectral_norm,
               spectral_norm_tap = spectral_norm_tap,
-              spectral_norm_sepkron = spectral_norm_sepkron))
+              spectral_norm_sepkron = spectral_norm_sepkron,
+              L1Selected         = L[1],
+              L2Selected         = L[2]))
 }
 
 
 type = "rectangular"
-l = 1
 c = 1
-
+grid_size = 20
 
 # Run the original R version
 tic()
-result_og <- simulation_og(grid_size, params, l = 1, c = 1, type = "rectangular")
+result_og <- simulation_og(grid_size, params, c = c, type = type)
 toc()
+
 # Run the C++-assisted version
-
 tic()
-result_cpp <- simulation_cpp(grid_size, params, l = 1, c = 1, type = "rectangular")
+result_cpp <- simulation_cpp(grid_size, params, c = c, type = type)
 toc()
 
-components <- c("truecov_matrices", "cov_matrices", "taper_matrices",  "RhoEst",
-                "spectral_norm", "spectral_norm_tap", "spectral_norm_sepkron")
+# Run the C++-assisted version
+tic()
+result_cpp_2 <- simulation_cpp(grid_size, params, c = c, type = type)
+toc()
+
+
+components <- c("truecov_matrices", "cov_matrices", "taper_matrices",
+                "taper_covariances", "RhoEst",
+                "spectral_norm", "spectral_norm_tap", "spectral_norm_sepkron",
+                "L1Selected", "L2Selected")
 
 for (comp in components) {
   cat(sprintf("Comparing component '%s':\n", comp))
@@ -562,34 +637,77 @@ for (comp in components) {
   cat("\n")
 }
 
-benchmark_results <- microbenchmark(
-  simulation_og = simulation_og(grid_size, params, l = 1, c = 1, type = "rectangular"),
-  simulation_cpp = simulation_cpp(grid_size, params, l = 1, c = 1, type = "rectangular"),
-  times = 2
+
+for (comp in components) {
+  cat(sprintf("Comparing component '%s':\n", comp))
+  comp_cpp_1 <- result_cpp[[comp]]
+  comp_cpp_2 <- result_cpp_2[[comp]]
+  cmp <- all.equal(comp_cpp_1, comp_cpp_2)
+  print(cmp)
+  cat("\n")
+}
+
+benchmark_results = microbenchmark(
+  simulation_og = simulation_og(grid_size, params, c = 2, type = "trapezoid"),
+  simulation_cpp = simulation_cpp(grid_size, params, c = 2, type = "trapezoid"),
+  times = 10
 )
 
 print(benchmark_results)
-#-------------------------------------------------------------------------------
-# COMPARE TAPERED SEP AUTOCOVARIANCE MULLTIPLE KRONECKER
 
-resR = Tapered_Sep_Autocovariance_Kron_multi(X, c=1, L=c(1,1),
-                type = "rectangular")
+#------------------------------------------------------------------------------
+sigma = 1
+alpha = 1
+beta = 0
+grid_size = 50
+n1 = grid_size
+n2 = grid_size
+nvec = c(grid_size, grid_size)
+g = length(nvec)
+N = prod(nvec)
+lambda = 3
+params = list(sigma = sigma,
+              alpha1 = alpha,
+              alpha2 = alpha,
+              lambda1 = lambda,
+              lambda2 = lambda,
+              beta = beta,
+              test_sep = F)
 
-rescpp = Tapered_Sep_Autocovariance_Kron_multi_cpp(X, c=1, L=c(1,1),
-                                                   type = "rectangular")
 
-Kron_CPP <- rescpp$KronTaperCov
-Kron_R <- resR$KronTaperCov
-all.equal(Kron_R, Kron_CPP)
+spatial_process = simulate_spatial_process(
+  covariance_function = ModifiedExponentialCovariance,
+  grid_size = grid_size,
+  params = params,
+  seed = 3)
+
+
+X = spatial_process$X
+M_ij_matrix = compute_M_matrix_cpp(N, nvec = nvec)
+
+# Compute all autocovariances at once using vectorized form
+# Use sapply to map through each row of the m_ij matrix
+C_ij_vector = compute_autocovariance_vector_cpp(X, M_ij_matrix)
+
+# Now reshape it back to a matrix form (filled by columns)
+C_ij_matrix = matrix(C_ij_vector, nrow=N, ncol=N)
+
+# Compute Autocovariance lag 0,0
+C_00 = SpatialAutoCov_cpp(X, c(0,0))
+
+# Compute regular GammaEst matrix normalized with C_00
+GammaEst = C_ij_matrix
+
+RhoEst = C_ij_matrix / C_00
+
+Lv1 = bandwidth_selection_spatial_cpp_v1(RhoEst, n1=n1, n2=n2)
+Lv2 = bandwidth_selection_spatial_cpp_v2(X, n1=n1, n2=n2)
+
+all.equal(Lv1, Lv2)
 
 benchmark_results <- microbenchmark(
-  R_version   = Tapered_Sep_Autocovariance_Kron_multi(X, c=1, L=c(1,1),
-                                                      type = "rectangular"),
-  
-  CPP_version = Tapered_Sep_Autocovariance_Kron_multi_cpp(X, c=1, L=c(1,1),
-                                                          type = "rectangular"),
-  
-  times = 50
+  v1 = bandwidth_selection_spatial_cpp_v1(RhoEst, n1=n1, n2=n2),
+  v2 = bandwidth_selection_spatial_cpp_v2(X, n1=n1, n2=n2),
+  times =50
 )
 print(benchmark_results)
-

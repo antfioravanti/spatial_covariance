@@ -29,62 +29,51 @@ source("R/estimators.R") # Estimators
 source("R/plotting.R")  # Plotting functions
 sourceCpp("src/estimators.cpp")
 #-------------------------------------------------------------------------------
-# ONE SIMULATION FUNCTION
+# ONE SIMULATION
 #-------------------------------------------------------------------------------
 
-run_one_simulation = function(grid_size = 10,
-                              set_seed = 42,
-                              sigma = 1,
-                              beta = 0,
-                              alpha = 1,
-                              lambda = 2,
-                              type = "rectangular",
-                              c = 1) {
+run_one_simulation = function(params,
+                              set_seed,
+                              grid_size,
+                              type,
+                              c){
+
+  # Create vector with the grid size (square grid)
+  nvec = c(grid_size, grid_size)
+  g = length(nvec) # number of spatial dimension (for now g = 2)
+  N = prod(nvec)   # Total size of the grid n1 x n2
   
-  # Param list for ModifiedExponentialCovariance
-  params = list(
-    sigma = sigma,
-    alpha1 = alpha,
-    alpha2 = alpha,
-    lambda1 = lambda,
-    lambda2 = lambda,
-    beta = beta,
-    test_sep = FALSE
-  )
-  
-  # 1) Simulate the spatial process
+  # 1) Simulate the spatial process given the parameters and 
+  #    grid sizes
   spatial_process = simulate_spatial_process(
     covariance_function = ModifiedExponentialCovariance,
     grid_size = grid_size,
     params = params,
     seed = set_seed)
   
-  X = spatial_process$X
-  true_cov = spatial_process$covariance
+  X = spatial_process$X                 # Spatial Process
+  true_cov = spatial_process$covariance # True Covariance
   
-  # 2) Build the matrix of lags M_ij
-  nvec = c(grid_size, grid_size)
-  N = prod(nvec)
-  
+  # 2) Computing M Matrix for lags corrected with the m functions
   M_ij_matrix = compute_M_matrix_cpp(N, nvec = nvec)
   
-  # 3) Compute all sample autocovariances
+  # 3) Compute all autocovariances
   C_ij_vector = compute_autocovariance_vector_cpp(X, M_ij_matrix)
   
-  # Construct the autocovariance matrix
-  C_ij_matrix = matrix(C_ij_vector, nrow = N, ncol = N)
+  # Reshape back to a Matrix
+  C_ij_matrix = matrix(C_ij_vector, nrow=N, ncol=N)
   
-  # Lag 0,0 autocovariance
-  C_00    = SpatialAutoCov_cpp(X, c(0,0))
-  # Autocovariance Matrix
-  GammaEst = C_ij_matrix 
-  # Autocorrelation matrix
-  corrMat = C_ij_matrix / C_00
+  # Compute Autocovariance lag 0,0
+  C_00 = SpatialAutoCov_cpp(X, c(0,0))
   
+  # Naive Autocovariance Estimator
+  GammaEst = C_ij_matrix
+  # Naive Autocorrelation Estimator
+  RhoEst = C_ij_matrix / C_00
   
-  # 5) Select empirical bandwidth for each dimension
-  Lvals = bandwidth_selection_spatial_cpp(
-    corrMat = corrMat,
+  # 4) Select empirical bandwidth for each dimension
+  Lvals = bandwidth_selection_spatial_cpp_v1(
+    corrMat = RhoEst,
     n1 = grid_size,
     n2 = grid_size,
     C0 = 2,
@@ -93,61 +82,54 @@ run_one_simulation = function(grid_size = 10,
   # Turn it into a vector c(l1, l2)
   L = unlist(Lvals, use.names = FALSE)
   
-  # 6) Compute Taper matrix
-  kappa_ij_vector = compute_multi_taper_vector_cpp(M_ij_matrix, L,
-                                                   c=c, type=type)
+  # 5) Compute Taper matrix
+  kappa_ij_vector = compute_multi_taper_vector_cpp(M_ij_matrix,
+                                                   L = L,
+                                                   c = c,
+                                                   type = type)
   
   # Turn into matrix
   kappa_ij_matrix = matrix(kappa_ij_vector, nrow = N, ncol = N)
   
-  # 7) Build Tapered Covariance
+  # Compute Tapered Covariance Matrix
   GammaEstTaper = kappa_ij_matrix * GammaEst
   
-  # 8) Compute Separable Taper Estimator
-  # TODO: Implement in C++ the following function and then continue with 
-  # the migration
-  SepResults = Tapered_Sep_Autocovariance_Kron_multi(
+  # 6) Compute Separable Taper Estimator
+  SepResults = Tapered_Sep_Autocovariance_Kron_multi_cpp(
     X,
-    L   = L,
     c   = c,
+    L   = L,
     type= type)
+  
   
   GammaEstTaperSep = SepResults$KronTaperCov
   
-  # 9) Compute matrix norms:
+  truecov_matrices = true_cov
+  cov_matrices = GammaEst
+  taper_matrices = kappa_ij_matrix
+  taper_covariances = GammaEstTaper
+  RhoEst = RhoEst
   spectral_norm = norm(true_cov - GammaEst, type = "2")
-  frob_norm = norm(true_cov - GammaEst, type = "F")
-  
   spectral_norm_tap = norm(true_cov - GammaEstTaper, type = "2")
-  frob_norm_tap = norm(true_cov - GammaEstTaper, type = "F")
-  
   spectral_norm_sepkron = norm(true_cov - GammaEstTaperSep, type = "2")
-  frob_norm_sepkron = norm(true_cov - GammaEstTaperSep, type = "F")
-  
-  selected_l1  = L[1]
-  selected_l2  = L[2]
   
   # Build data frame for the current lambda and all grid sizes
   results_df = data.frame(
     GridSize           = grid_size,
     seed               = set_seed,
-    alpha              = alpha,
-    lambda             = lambda,
-    beta               = beta,
+    alpha              = params$alpha1,
+    lambda             = params$lambda1,
+    beta               = params$beta,
     type               = type,
-    SpectralNorm       = spectral_norm,
-    SpectralNormTaper  = spectral_norm_tap,
-    FrobNorm           = frob_norm,
-    FrobNormTaper      = frob_norm_tap,
-    SpectralNormSepKron = spectral_norm_sepkron,
-    FrobNormSepKron    = frob_norm_sepkron,
-    L1Selected         = selected_l1,
-    L2Selected         = selected_l2
+    SNorm              = spectral_norm,
+    SNormTapered       = spectral_norm_tap,
+    SNormSeparTapered  = spectral_norm_sepkron,
+    L1Selected         = L[1],
+    L2Selected         = L[2]
   )
   
   return(results_df)
 }
-
 
 #-------------------------------------------------------------------------------
 # RUNNING THE SIMULATION FOR MULTIPLE SAMPLES
@@ -158,6 +140,13 @@ sigma = 1
 alpha = 1
 lambdas = seq(from = 2, to = 6, by = 2)
 beta = 0
+
+first_params = list(sigma = sigma,
+                    alpha1 = alpha,
+                    alpha2 = alpha,
+                    beta = beta,
+                    test_sep = F)
+
 # Taper parameters
 type = "rectangular"
 c = 1
@@ -169,7 +158,7 @@ num_cores = detectCores()
 # Create and register a cluster
 cl = makeCluster(num_cores - 3)
 clusterEvalQ(cl, {
-  library(Rcpp) 
+  library(Rcpp)
   library(MASS)
   library(tidyr)
   library(pracma)
@@ -182,12 +171,14 @@ clusterEvalQ(cl, {
   source("R/utils.R")           
   source("R/covariance_funs.R") 
   source("R/estimators.R")      
-  source("R/plotting.R")
   sourceCpp("src/estimators.cpp")
-  
   })
-registerDoParallel(cl)
 clusterExport(cl, "run_one_simulation")
+#clusterCall(cl, sourceCpp("src/estimators.cpp"))
+registerDoParallel(cl)
+fun_list = my_cpp_source_funs("src/estimators.cpp")
+cfun = fun_list$functions
+
 
 tic("Start Simulation: ")
 for(grid_size in Ns){
@@ -199,20 +190,18 @@ for(grid_size in Ns){
     tic("Start Lambda: ")
     # Loop for Lambdas
     cat("Parameter Lambda: ", lambda, "\n")
-  
+    params = append(first_params, list(lambda1 = lambda, lambda2 = lambda))
   
     RESULTS = foreach(i = 1:nSim, 
-                         .combine = rbind) %dopar% {
-
+                      .noexport = cfun,
+                      .combine = rbind) %dopar% {
+                           
       out_df = run_one_simulation(
+        params = params,
         grid_size = grid_size,
         set_seed = i,
-        sigma = 1,
-        beta = 0,
-        lambda = lambda,
-        alpha = 1,
-        type = "rectangular",
-        c = 1)
+        type = type,
+        c = c)
       
       return(out_df)
     }                   
@@ -226,3 +215,13 @@ stopCluster(cl)
 toc()
 
 
+#-------------------------------------------------------------------------------
+# Save the results
+resdir = file.path(wd,"results")
+
+timestamp = format(Sys.time(), "%Y-%m-%d_%H%M")
+file_name = paste0("results_autoselection_", timestamp, ".csv")
+
+
+write.csv(final_df, file = file.path(resdir, file_name),
+          row.names = F)

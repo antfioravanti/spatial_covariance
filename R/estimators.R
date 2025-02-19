@@ -188,7 +188,7 @@ compute_m_values_vectorized_corrected = function(grid, nvec, d=1,
 # }
 
 
-flat_top_taper = function(xvec, c=1, l=1, type = "rectangular") {
+flat_top_taper = function(xvec, c, l, type) {
   # Define the rectangular kernel
   rectangular_kernel = function(xvec, c) {
     if (all(abs(xvec) <= c)) {
@@ -221,7 +221,7 @@ flat_top_taper = function(xvec, c=1, l=1, type = "rectangular") {
   return(kappa)
 }
 
-flat_top_taper_1d = function(x_scalar, c=1, l=1, type="rectangular") {
+flat_top_taper_1d = function(x_scalar, c, l, type) {
   # x_scalar is a single numeric
   # l is the bandwidth (scalar)
   # c is the cutoff defining "flat" portion
@@ -250,7 +250,7 @@ flat_top_taper_1d = function(x_scalar, c=1, l=1, type="rectangular") {
   return(kappa)
 }
 
-flat_top_taper_multi = function(x_vec, c=1, L, type="rectangular") {
+flat_top_taper_multi = function(x_vec, c, L, type) {
   # x_vec: a numeric vector of dimension d, e.g. (h1, h2, ..., hd)
   # L:     a numeric vector of the same length as x_vec, e.g. (l1, l2, ..., ld)
   # c:     same meaning as before
@@ -410,7 +410,7 @@ SpatialAutoCov_loop = function(X, hvec){
 # SEPARABLE AUTOCOVARIANCE ESTIMATOR
 #-------------------------------------------------------------------------------
 
-Tapered_Sep_Autocovariance_Kron = function(X, c=1, l=1, type = "rectangular"){
+Tapered_Sep_Autocovariance_Kron = function(X, c, l, type){
   
       n1 = ncol(X)
       n2 = nrow(X)
@@ -451,7 +451,7 @@ Tapered_Sep_Autocovariance_Kron = function(X, c=1, l=1, type = "rectangular"){
 
 
 
-Tapered_Sep_Autocovariance_Kron_cpp = function(X, c=1, l=1, type = "rectangular"){
+Tapered_Sep_Autocovariance_Kron_cpp = function(X, c, l, type){
   
   result_cpp = tapered_sep_autocovariance_cpp(X, c, l, type)
   
@@ -474,8 +474,8 @@ Tapered_Sep_Autocovariance_Kron_cpp = function(X, c=1, l=1, type = "rectangular"
 
 
 
-Tapered_Sep_Autocovariance_Kron_multi = function(X, c=1, L=c(1,1),
-                                           type = "rectangular") {
+Tapered_Sep_Autocovariance_Kron_multi = function(X, c, L,
+                                           type) {
   # X is assumed to be a g-dimensional array or matrix
   #   n1 = number of columns, n2 = number of rows
   #   and g = length(dim(X)) is presumably 2
@@ -541,8 +541,7 @@ Tapered_Sep_Autocovariance_Kron_multi = function(X, c=1, L=c(1,1),
 
 
 
-Tapered_Sep_Autocovariance_Kron_multi_cpp = function(X, c=1, L=c(1,1),
-                                                     type = "rectangular") {
+Tapered_Sep_Autocovariance_Kron_multi_cpp = function(X, c, L, type) {
   
   if (!is.vector(L)) {
     stop("L must be a vector containing different bandwidths 
