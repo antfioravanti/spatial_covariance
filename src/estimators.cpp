@@ -276,11 +276,26 @@ double flat_top_taper_1d_cpp(double x_scalar,
       // Rectangular kernel: 1 if |x_scaled| <= c, otherwise 0
       kappa = (std::abs(x_scaled) <= c) ? 1.0 : 0.0;
     } else if (type == "trapezoid") {
-      // Trapezoid kernel: max(min(c - |x_scaled|, 1), 0)
-      double val = c - std::abs(x_scaled);
-      kappa = std::max(std::min(val, 1.0), 0.0);
-    } else {
-      Rcpp::stop("type must be 'rectangular' or 'trapezoid'.");
+      // Compute kappa based on the sign and value of x_scaled
+      if (x_scaled >= 0.0) {
+          if (x_scaled <= 1.0) {
+              kappa = 1.0;
+          } else if (x_scaled <= 2.0) {
+              kappa = 2.0 - x_scaled; // positive branch: 2 - x
+          } else {
+              kappa = 0.0;
+          }
+      } else { // x_scaled is negative
+          if (x_scaled >= -1.0) {
+              kappa = 1.0;
+          } else if (x_scaled >= -2.0) {
+              kappa = 2.0 + x_scaled; // negative branch: 2 + x
+          } else {
+              kappa = 0.0;
+          }
+        }
+      } else {
+        Rcpp::stop("type must be 'rectangular' or 'trapezoid'.");
     }
     
     return kappa;
@@ -605,7 +620,7 @@ List tapered_sep_auto_multi_cpp(NumericMatrix X,
         // NOTE: we are using the scalar version of flat_top_taper_cpp
         // because we need a differnt taper function for each
         // spatial dimension.
-        kappa_sep_mat(j, i) = flat_top_taper_cpp(hvec, L[r], c, type,);
+        kappa_sep_mat(j, i) = flat_top_taper_cpp(hvec, L[r], c, type);
         // Compute the spatial autocovariance for lag vector hvec.
         C_sep_mat(j, i) = SpatialAutoCov_cpp(X, hvec);
       }

@@ -19,27 +19,25 @@ if (!require(Rcpp)) install.packages("Rcpp"); library(Rcpp)
 if (!require(microbenchmark)) install.packages("microbenchmark"); library(microbenchmark)
 #if (!require(here)) install.packages("here"); library(here)
 # Set the working directory to where the current file is saved
-setwd(file.path(dirname(rstudioapi::getActiveDocumentContext()$path),".."))
 wd = file.path(dirname(rstudioapi::getActiveDocumentContext()$path))
+setwd(file.path(wd,".."))
 source("R/utils.R") # General functions
 source("R/covariance_funs.R") # Analytical covariances
 source("R/estimators.R") # Estimators
 source("R/plotting.R")  # Plotting functions
-
 sourceCpp("src/estimators.cpp")
 set.seed(42)
-
 #-------------------------------------------------------------------------------
 sigma = 1
 alpha = 1
 beta = 0
-grid_size = 20
+grid_size = 30
 n1 = grid_size
 n2 = grid_size
 nvec = c(grid_size, grid_size)
 g = length(nvec)
 N = prod(nvec)
-lambda = 3
+lambda = 6
 params = list(sigma = sigma,
               alpha1 = alpha,
               alpha2 = alpha,
@@ -57,6 +55,11 @@ spatial_process = simulate_spatial_process(
 
 
 X = spatial_process$X
+
+truecov = spatial_process$covariance
+
+plot_matrix(truecov, main = paste("True Covariance; lambda = ", lambda,
+                                  "beta =", beta))
 #-------------------------------------------------------------------------------
 # COMPARE M VALUES FUNCTIONS
 
@@ -605,7 +608,7 @@ simulation_cpp = function(grid_size, params, c, type ){
 
 type = "rectangular"
 c = 1
-grid_size = 20
+grid_size = 60
 
 # Run the original R version
 tic()
@@ -623,9 +626,10 @@ result_cpp_2 <- simulation_cpp(grid_size, params, c = c, type = type)
 toc()
 
 
-components <- c("truecov_matrices", "cov_matrices", "taper_matrices",
-                "taper_covariances", "RhoEst",
-                "spectral_norm", "spectral_norm_tap", "spectral_norm_sepkron",
+components <- c("true_cov", "GammaEst", "RhoEst",
+                "taper_matrices", "GammaEstTaper",
+                "GammaEstTaperSep", "spectral_norm", 
+                "spectral_norm_tap", "spectral_norm_sepkron",
                 "L1Selected", "L2Selected")
 
 for (comp in components) {
@@ -648,11 +652,10 @@ for (comp in components) {
 }
 
 benchmark_results = microbenchmark(
-  simulation_og = simulation_og(grid_size, params, c = 2, type = "trapezoid"),
-  simulation_cpp = simulation_cpp(grid_size, params, c = 2, type = "trapezoid"),
-  times = 10
+  simulation_og = simulation_og(grid_size, params, c = 1, type = "rectangular"),
+  simulation_cpp = simulation_cpp(grid_size, params, c = 1, type = "rectangular"),
+  times = 2
 )
-
 print(benchmark_results)
 
 #------------------------------------------------------------------------------

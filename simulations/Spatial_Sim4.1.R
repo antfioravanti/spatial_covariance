@@ -32,11 +32,11 @@ sourceCpp("src/estimators.cpp")
 # ONE SIMULATION
 #-------------------------------------------------------------------------------
 
-run_one_simulation = function(params,
-                              set_seed,
-                              grid_size,
-                              type,
-                              c){
+one_simulation_autoselection = function(params,
+                                        set_seed,
+                                        grid_size,
+                                        type,
+                                        c){
 
   # Create vector with the grid size (square grid)
   nvec = c(grid_size, grid_size)
@@ -131,6 +131,97 @@ run_one_simulation = function(params,
   return(results_df)
 }
 
+
+one_simulation_gridsearch = function(params,
+                                    l,
+                                    set_seed,
+                                    grid_size,
+                                    type,
+                                    c){
+  
+  # Create vector with the grid size (square grid)
+  nvec = c(grid_size, grid_size)
+  g = length(nvec) # number of spatial dimension (for now g = 2)
+  N = prod(nvec)   # Total size of the grid n1 x n2
+  
+  # 1) Simulate the spatial process given the parameters and 
+  #    grid sizes
+  spatial_process = simulate_spatial_process(
+    covariance_function = ModifiedExponentialCovariance,
+    grid_size = grid_size,
+    params = params,
+    seed = set_seed)
+  
+  X = spatial_process$X                 # Spatial Process
+  true_cov = spatial_process$covariance # True Covariance
+  
+  # 2) Computing M Matrix for lags corrected with the m functions
+  M_ij_matrix = compute_M_matrix_cpp(N, nvec = nvec)
+  
+  # 3) Compute all autocovariances
+  C_ij_vector = compute_autocovariance_vector_cpp(X, M_ij_matrix)
+  
+  # Reshape back to a Matrix
+  C_ij_matrix = matrix(C_ij_vector, nrow=N, ncol=N)
+  
+  # Compute Autocovariance lag 0,0
+  C_00 = SpatialAutoCov_cpp(X, c(0,0))
+  
+  # Naive Autocovariance Estimator
+  GammaEst = C_ij_matrix
+  # Naive Autocorrelation Estimator
+  RhoEst = C_ij_matrix / C_00
+  
+  # Assign same l for both spatial dimensions
+  L = c(l, l)
+  # 4) Compute Taper matrix
+  kappa_ij_vector = compute_multi_taper_vector_cpp(M_ij_matrix,
+                                                   L = L,
+                                                   c = c,
+                                                   type = type)
+  
+  # Turn into matrix
+  kappa_ij_matrix = matrix(kappa_ij_vector, nrow = N, ncol = N)
+  
+  # Compute Tapered Covariance Matrix
+  GammaEstTaper = kappa_ij_matrix * GammaEst
+  
+  # 6) Compute Separable Taper Estimator
+  SepResults = Tapered_Sep_Autocovariance_Kron_multi_cpp(
+    X,
+    c   = c,
+    L   = L,
+    type= type)
+  
+  
+  GammaEstTaperSep = SepResults$KronTaperCov
+  
+  truecov_matrices = true_cov
+  cov_matrices = GammaEst
+  taper_matrices = kappa_ij_matrix
+  taper_covariances = GammaEstTaper
+  RhoEst = RhoEst
+  spectral_norm = norm(true_cov - GammaEst, type = "2")
+  spectral_norm_tap = norm(true_cov - GammaEstTaper, type = "2")
+  spectral_norm_sepkron = norm(true_cov - GammaEstTaperSep, type = "2")
+  
+  # Build data frame for the current lambda and all grid sizes
+  results_df = data.frame(
+    GridSize           = grid_size,
+    seed               = set_seed,
+    l                  = l,
+    alpha              = params$alpha1,
+    lambda             = params$lambda1,
+    beta               = params$beta,
+    type               = type,
+    SNorm              = spectral_norm,
+    SNormTapered       = spectral_norm_tap,
+    SNormSeparTapered  = spectral_norm_sepkron,
+  )
+  
+  return(results_df)
+}
+
 #-------------------------------------------------------------------------------
 # RUNNING THE SIMULATION FOR MULTIPLE SAMPLES
 
@@ -148,8 +239,8 @@ first_params = list(sigma = sigma,
                     test_sep = F)
 
 # Taper parameters
-type = "rectangular"
-c = 1
+type = "trapezoid"
+c = 2
 final_df = data.frame()
 
 # Detect the number of cores
@@ -196,7 +287,7 @@ for(grid_size in Ns){
                       .noexport = cfun,
                       .combine = rbind) %dopar% {
                            
-      out_df = run_one_simulation(
+      out_df = one_simulation_autoselection(
         params = params,
         grid_size = grid_size,
         set_seed = i,
