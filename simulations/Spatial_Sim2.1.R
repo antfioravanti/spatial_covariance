@@ -30,8 +30,8 @@ set.seed(42)
 # MODIFIED EXPONENTIAL
 
 # Define the dimensions of the 2D grid
-n1 = 30 # Dimension 1 size
-n2 = 30 # Dimension 2 size
+n1 = 60 # Dimension 1 size
+n2 = 60 # Dimension 2 size
 nvec = c(n1, n2)
 N = prod(nvec)
 # Generate spatial locations/coordinates of integers
@@ -66,7 +66,7 @@ res = ModifiedExponentialCovariance(grid,
                                     lambda1 = lambda1,
                                     lambda2 = lambda2,
                                     beta = beta,
-                                    test_sep = T)
+                                    test_sep = F)
 true_cov = res$covariance
 #is_positive_semi_definite(true_cov)
 title_cov = paste("True Covariance Modifed Exp; beta = ", beta,
@@ -197,7 +197,7 @@ for(lambda in lambdas){
       true_cov = spatial_process$covariance
     
       # Computing M vector for correct lags
-      M_ij_matrix = compute_M_matrix(N)
+      M_ij_matrix = compute_M_matrix(N, nvec = nvec)
       
       # Compute all autocovariances at once using vectorized form
       # Use sapply to map through each row of the m_ij matrix

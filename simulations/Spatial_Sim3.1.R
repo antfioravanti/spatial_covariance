@@ -112,7 +112,7 @@ run_one_simulation = function(grid_size = 10,
   GammaEstTaper = kappa_ij_matrix * GammaEst
   
   # 8) Compute Separable Taper Estimator
-  SepResults = Tapered_Sep_Autocovariance_Kron_v2(
+  SepResults = Tapered_Sep_Autocovariance_Kron_multi(
     X,
     L   = L,
     c   = c,

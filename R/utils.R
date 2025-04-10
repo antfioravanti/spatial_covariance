@@ -36,3 +36,12 @@ is_positive_semi_definite = function(matrix) {
 #   ))
 # }
 
+my_cpp_source_funs = function(file) {
+  tmp = new.env(parent=parent.frame())
+  sourceCpp(file, env = tmp)
+  funs <- names(tmp)[unlist(eapply(tmp, is.function))]
+  for(x in names(tmp)) {
+    assign(x, tmp[[x]], envir = parent.frame())
+  }
+  return(list(functions=funs))
+}

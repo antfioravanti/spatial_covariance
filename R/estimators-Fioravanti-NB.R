@@ -4,7 +4,7 @@ if (!require(MASS)) install.packages("MASS"); library(MASS)
 if (!require(foreach)) install.packages("foreach"); library(foreach)
 if (!require(parallel)) install.packages("parallel"); library(parallel)
 if (!require(doParallel)) install.packages("doParallel"); library(doParallel)
-sourceCpp("src/estimators.cpp")
+
 #-------------------------------------------------------------------------------
 # M FUNCTIONS
 #-------------------------------------------------------------------------------
@@ -44,7 +44,7 @@ compute_m0_values = function(i, j, d=1) {
 
 compute_m_values = function(i,j, nvec, d=1,
                             flipsign = TRUE,
-                            flipposition = TRUE) {
+                            flipposition = FALSE) {
   # Function to get the vector M with the right lags
   g = length(nvec)
   m_ij = numeric(g) # dimension of the spatial process
@@ -62,7 +62,7 @@ compute_m_values = function(i,j, nvec, d=1,
   return(m_ij)
 }
 
-compute_M_matrix = function(N, nvec, flipsign = TRUE, flipposition = TRUE){
+compute_M_matrix = function(N, nvec, flipsign = TRUE, flipposition = FALSE){
     # Computing M Matrix for correct lags
     M_ij_list = vector("list", N*N)
     for(i in 1:N){
@@ -83,7 +83,7 @@ compute_M_matrix = function(N, nvec, flipsign = TRUE, flipposition = TRUE){
 # Vectorized computation of m_ij values with correct order
 compute_m_values_vectorized_corrected = function(grid, nvec, d=1,
                                                  flipsign=TRUE,
-                                                 flipposition=T) {
+                                                 flipposition=FALSE) {
   
   # Number of spatial dimensions
   g <- length(nvec)
@@ -188,7 +188,7 @@ compute_m_values_vectorized_corrected = function(grid, nvec, d=1,
 # }
 
 
-flat_top_taper = function(xvec, c, l, type) {
+flat_top_taper = function(xvec, c=1, l=1, type = "rectangular") {
   # Define the rectangular kernel
   rectangular_kernel = function(xvec, c) {
     if (all(abs(xvec) <= c)) {
@@ -221,7 +221,7 @@ flat_top_taper = function(xvec, c, l, type) {
   return(kappa)
 }
 
-flat_top_taper_1d = function(x_scalar, c, l, type) {
+flat_top_taper_1d = function(x_scalar, c=1, l=1, type="rectangular") {
   # x_scalar is a single numeric
   # l is the bandwidth (scalar)
   # c is the cutoff defining "flat" portion
@@ -250,7 +250,7 @@ flat_top_taper_1d = function(x_scalar, c, l, type) {
   return(kappa)
 }
 
-flat_top_taper_multi = function(x_vec, c, L, type) {
+flat_top_taper_multi = function(x_vec, c=1, L, type="rectangular") {
   # x_vec: a numeric vector of dimension d, e.g. (h1, h2, ..., hd)
   # L:     a numeric vector of the same length as x_vec, e.g. (l1, l2, ..., ld)
   # c:     same meaning as before
@@ -325,8 +325,8 @@ SpatialAutoCov_v0 = function(X, hvec){
   # cov_lags = 1/N* sum((X[T11:T12, T21:T22] - X_mean) %*%
   #                       t(X[(T11+h1):(T12+h1), (T21+h2):(T22+h2)] - X_mean))
   
-  sub_matrix1 = X[(T11+h1):(T12+h1), (T21+h2):(T22+h2)] 
-  sub_matrix2 = X[T11:T12, T21:T22] 
+  sub_matrix1 = X[(T11+h1):(T12+h1), (T21+h2):(T22+h2)] - X_mean
+  sub_matrix2 = X[T11:T12, T21:T22] - X_mean
   
   sub_vector1 = as.vector(sub_matrix1) # column wise vectorization
   sub_vector2 = as.vector(sub_matrix2) # column wise vectorization
@@ -336,8 +336,71 @@ SpatialAutoCov_v0 = function(X, hvec){
   return(C_h_hat)
 }
 
+GetSubmatrices = function(X, hvec){
+  # Estimator for the Autocovariance function (page 2 of the manuscript)
+  # Input:
+  #   X     matrix of spatial / spatiotemporal observations
+  #   hvec  vector containing the dimensional lags
+  
+  h1 = hvec[1] # lag1
+  h2 = hvec[2] # lag2
+  
+  X_mean = mean(as.vector(X))
+  n1 = dim(X)[1]
+  n2 = dim(X)[2]
+  N = n1*n2
+  
+  #Finding the regions on which to shift the lags for the autocorrelation
+  # Horizontal lag
+  T11 = max(1, 1-h1)
+  T12 = min(n1, n1-h1)
+  
+  # Vertical lag
+  T21 = max(1, 1-h2)
+  T22 = min(n2, n2-h2)
+  
+  sub_matrix1 = X[T21:T22, T11:T12]
+  sub_matrix2 = X[(T21+h2):(T22+h2), (T11+h1):(T12+h1)]
+ 
+  return(list(X1 = sub_matrix1, X2 = sub_matrix2))
+}
+
 
 SpatialAutoCov = function(X, hvec){
+  # Estimator for the Autocovariance function (page 2 of the manuscript)
+  # Input:
+  #   X     matrix of spatial / spatiotemporal observations
+  #   hvec  vector containing the dimensional lags
+  
+  h1 = hvec[1] # lag1
+  h2 = hvec[2] # lag2
+  
+  X_mean = mean(as.vector(X))
+  n1 = dim(X)[1]
+  n2 = dim(X)[2]
+  N = n1*n2
+  
+  #Finding the regions on which to shift the lags for the autocorrelation
+  # Horizontal lag
+  T11 = max(1, 1-h1)
+  T12 = min(n1, n1-h1)
+  
+  # Vertical lag
+  T21 = max(1, 1-h2)
+  T22 = min(n2, n2-h2)
+  
+  sub_matrix1 = X[T21:T22, T11:T12]
+  sub_matrix2 = X[(T21+h2):(T22+h2), (T11+h1):(T12+h1)]
+  
+  sub_vector1 = as.vector(sub_matrix1) # column wise vectorization
+  sub_vector2 = as.vector(sub_matrix2) # column wise vectorization
+  
+  C_h_hat = 1/N* sum(t((sub_vector1) * t((sub_vector2))))
+  
+  return(C_h_hat)
+}
+
+SpatialAutoCov_v2 = function(X, hvec){
   # Estimator for the Autocovariance function (page 2 of the manuscript)
   # Input:
   #   X     matrix of spatial / spatiotemporal observations
@@ -410,7 +473,7 @@ SpatialAutoCov_loop = function(X, hvec){
 # SEPARABLE AUTOCOVARIANCE ESTIMATOR
 #-------------------------------------------------------------------------------
 
-Tapered_Sep_Autocovariance_Kron = function(X, c, l, type){
+Tapered_Sep_Autocovariance_Kron = function(X, c=1, l=1, type = "rectangular"){
   
       n1 = ncol(X)
       n2 = nrow(X)
@@ -443,49 +506,24 @@ Tapered_Sep_Autocovariance_Kron = function(X, c, l, type){
       for(r in (g-1):1){
         KronTaperCov = kronecker(KronTaperCov, tapered_cov_sep[[r]])
       }
-  return(list(KronTaperCov = KronTaperCov,
-              kappas_sep = kappas_sep,
-              cov_sep = cov_sep,
-              tapered_cov_sep = tapered_cov_sep))
+  return(list(KronTaperCov = KronTaperCov, kappas_sep = kappas_sep,
+              cov_sep = cov_sep, tapered_cov_sep = tapered_cov_sep))
 }
 
 
 
-Tapered_Sep_Autocovariance_Kron_cpp = function(X, c, l, type){
-  
-  result_cpp = tapered_sep_autocovariance_cpp(X, c, l, type)
-  
-  # Extract the tapered covariance list from the C++ output.
-  tapered_cov_sep = result_cpp$tapered_cov_sep
-  
-  # Determine the number of separable dimensions (typically, g = length(dim(X))).
-  g = length(tapered_cov_sep)
-  
-  
-  KronTaperCov = tapered_cov_sep[[g]]
-  for(r in (g-1):1){
-    KronTaperCov = kronecker(KronTaperCov, tapered_cov_sep[[r]])
-  }
-  return(list(KronTaperCov = KronTaperCov,
-              kappas_sep = result_cpp$kappas_sep,
-              cov_sep = result_cpp$cov_sep,
-              tapered_cov_sep = result_cpp$tapered_cov_sep))
-}
-
-
-
-Tapered_Sep_Autocovariance_Kron_multi = function(X, c, L,
-                                           type) {
+Tapered_Sep_Autocovariance_Kron_v2 = function(X, c=1, L=c(1,1),
+                                           type = "rectangular") {
   # X is assumed to be a g-dimensional array or matrix
   #   n1 = number of columns, n2 = number of rows
   #   and g = length(dim(X)) is presumably 2
-
+  
   if(is.vector(L) == F){
     stop("L must be a vector containing different bandwidths per spatial
          dimension.")
   }
-
-
+    
+    
   n1 = ncol(X)
   n2 = nrow(X)
   g  = length(dim(X))   # number of dimensions
@@ -494,15 +532,15 @@ Tapered_Sep_Autocovariance_Kron_multi = function(X, c, L,
   kappas_sep       = vector("list", g)
   cov_sep          = vector("list", g)
   tapered_cov_sep  = vector("list", g)
-
+  
   #   C_00 is the variance at lag=0,
 
   C_00 = SpatialAutoCov(X, rep(0, g))
-
+  
   # We'll create matrices kappa_sep_mat, C_sep_mat to store dimension-r slices
   kappa_sep_mat = matrix(NA, nrow = n2, ncol = n1)
   C_sep_mat     = matrix(NA, nrow = n2, ncol = n1)
-
+  
   # Loop over each dimension r in 1..g
   for(r in seq_len(g)) {
     for(i in seq_len(n1)) {
@@ -511,28 +549,28 @@ Tapered_Sep_Autocovariance_Kron_multi = function(X, c, L,
         hvec = rep(0, g)
         # only dimension r changes: hvec[r] = i-j
         hvec[r] = i - j
-
+        
         # Apply dimension-wise product taper
         kappa_sep_mat[i, j] = flat_top_taper(xvec = hvec,
                                              c     = c,
-                                             l     = L[r],
+                                             l     = L[r],    
                                              type  = type)
-
+        
         C_sep_mat[i, j] = SpatialAutoCov(X, hvec)
       }
     }
-
+    
     kappas_sep[[r]]       = kappa_sep_mat
     cov_sep[[r]]          = C_00^(-(g-1)) * C_sep_mat
     tapered_cov_sep[[r]]  = kappa_sep_mat * C_sep_mat
   }
-
+  
   # Then you do your Kronecker product over all dimensions:
   KronTaperCov = tapered_cov_sep[[g]]
   for(r in seq.int(g-1, 1, by=-1)) {
     KronTaperCov = kronecker(KronTaperCov, tapered_cov_sep[[r]])
   }
-
+  
   return(list(KronTaperCov     = KronTaperCov,
               kappas_sep      = kappas_sep,
               cov_sep         = cov_sep,
@@ -540,35 +578,6 @@ Tapered_Sep_Autocovariance_Kron_multi = function(X, c, L,
 }
 
 
-
-Tapered_Sep_Autocovariance_Kron_multi_cpp = function(X, c, L, type) {
-  
-  if (!is.vector(L)) {
-    stop("L must be a vector containing different bandwidths 
-         per spatial dimension.")
-  }
-  
-  result_list_cpp = tapered_sep_auto_multi_cpp(X=X,
-                                              c=c,
-                                              L=L,
-                                              type=type)
-    
-  # Extract the list of tapered covariance matrices
-  tapered_cov_sep <- result_list_cpp$tapered_cov_sep
-  # Determine the number of spatial dimensions
-  g <- length(tapered_cov_sep)
-  
-  # Start with the tapered covariance for the last dimension
-  KronTaperCov <- tapered_cov_sep[[g]]
-  # Then, combine via Kronecker product in reverse order
-  if (g > 1) {
-    for (r in seq.int(g - 1, 1, by = -1)) {
-      KronTaperCov <- kronecker(KronTaperCov, tapered_cov_sep[[r]])
-    }
-  }
-  
-  return(list(result_list_cpp, KronTaperCov = KronTaperCov))
-}
 
 #-------------------------------------------------------------------------------
 # ADAPTIVE BANDWIDTH SELECTION
