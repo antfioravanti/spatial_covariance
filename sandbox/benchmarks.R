@@ -16,6 +16,9 @@ if (!require(reshape2)) install.packages("reshape2"); library(reshape2)
 if (!require(ncf)) install.packages("ncf"); library(ncf)
 if (!require(openxlsx)) install.packages("openxlsx"); library(openxlsx)
 if (!require(Rcpp)) install.packages("Rcpp"); library(Rcpp)
+if (!require(wesanderson)) install.packages("wesanderson"); library(wesanderson)
+if (!require(RColorBrewer)) install.packages("RColorBrewer"); library(RColorBrewer)
+if (!require(pals)) install.packages("pals"); library(pals)
 if (!require(microbenchmark)) install.packages("microbenchmark"); library(microbenchmark)
 #if (!require(here)) install.packages("here"); library(here)
 # Set the working directory to where the current file is saved
@@ -26,7 +29,15 @@ source("R/covariance_funs.R") # Analytical covariances
 source("R/estimators.R") # Estimators
 source("R/plotting.R")  # Plotting functions
 sourceCpp("src/estimators.cpp")
-set.seed(42)
+set.seed(2)
+
+#------------------------------------------------------------------------------
+names(wes_palettes)
+wes_pal = wes_palette("Zissou1", n=5, type = c( "continuous"))
+wes_pal
+cols = brewer.pal(3, "BuGn")
+pal = colorRampPalette(cols)
+coolwarm_pal = coolwarm(10)
 #-------------------------------------------------------------------------------
 sigma = 1
 alpha = 1
@@ -37,7 +48,7 @@ n2 = grid_size
 nvec = c(grid_size, grid_size)
 g = length(nvec)
 N = prod(nvec)
-lambda = 6
+lambda = 4
 params = list(sigma = sigma,
               alpha1 = alpha,
               alpha2 = alpha,
@@ -58,8 +69,19 @@ X = spatial_process$X
 
 truecov = spatial_process$covariance
 
-plot_matrix(truecov, main = paste("True Covariance; lambda = ", lambda,
-                                  "beta =", beta))
+plot_matrix(truecov, 
+            main = paste("True Covariance; lambda = ", lambda,
+                          "beta =", beta))
+
+
+custom_palette = colorRampPalette(c("blue", "white", "red"))(50)
+
+plot_matrix(X, 
+            labels = T,
+            main = paste("Spatial Process on a Regular",
+                         grid_size, "x", grid_size, "Grid"),
+            show_legend = T,
+            col_palette = custom_palette)
 #-------------------------------------------------------------------------------
 # COMPARE M VALUES FUNCTIONS
 
@@ -714,3 +736,43 @@ benchmark_results <- microbenchmark(
   times =50
 )
 print(benchmark_results)
+#-------------------------------------------------------------------------------
+# ----------------------------------------------
+# 1) Simulate lattice process on a square grid
+# ----------------------------------------------
+
+set.seed(123)      # for reproducibility
+n <- 10            # size of the grid (n x n)
+X <- matrix(rnorm(n*n), nrow = n, ncol = n)
+
+# Coordinates of the grid (assuming a regular spacing of 1)
+x_coords <- 1:n
+y_coords <- 1:n
+
+# ----------------------------------------------
+# 2) Plot using base R's image()
+# ----------------------------------------------
+
+# image() takes x, y, and z (matrix) as inputs.
+# By default, image() expects the matrix rows
+# to start at the bottom. We often flip it for
+# a conventional "top-down" image if we want.
+image(x_coords, 
+      y_coords, 
+      Z,
+      col = rainbow(50),  # color palette
+      main = "Spatial Lattice Process (base R)",
+      xlab = "X Coordinate",
+      ylab = "Y Coordinate")
+
+# Optional: Add a color legend with the 'fields' package
+# install.packages("fields")  # if not installed
+library(fields)
+image.plot(x_coords, 
+           y_coords, 
+           Z,
+           col = rainbow(50),
+           main = "Spatial Lattice Process (with color scale)",
+           xlab = "X Coordinate",
+           ylab = "Y Coordinate")
+
