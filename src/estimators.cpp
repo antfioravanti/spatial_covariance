@@ -191,12 +191,21 @@ double flat_top_taper_cpp(NumericVector xvec,
     auto trapezoid_taper = [&](const NumericVector& xvec,
                                double c) -> double {
         NumericVector vals(xvec.size());
+        double prod =1.0;
         for (int idx = 0; idx < xvec.size(); ++idx){
-           vals[idx] = std::max(0.0, std::min(1.0, c - std::abs(xvec[idx])));
+          double xi = xvec[idx];
+          double abs_x = std::abs(xi);
+            // Check if the absolute value of xvec[idx] is smaller or equal to c
+            if (abs_x <= 1.0){
+                vals[idx] = 1.0;
+            } else if (abs_x <= c){
+                vals[idx] = c - abs_x;
+            } else {
+                vals[idx] = 0.0;
+            }
+            prod *= vals[idx];
         }
-        double kappa = std::accumulate(vals.begin(), vals.end(),
-                               1.0, std::multiplies<double>());
-        return kappa;
+        return prod;
     };
 
 
@@ -276,28 +285,18 @@ double flat_top_taper_1d_cpp(double x_scalar,
       // Rectangular kernel: 1 if |x_scaled| <= c, otherwise 0
       kappa = (std::abs(x_scaled) <= c) ? 1.0 : 0.0;
     } else if (type == "trapezoid") {
-      // Compute kappa based on the sign and value of x_scaled
-      if (x_scaled >= 0.0) {
-          if (x_scaled <= 1.0) {
-              kappa = 1.0;
-          } else if (x_scaled <= 2.0) {
-              kappa = 2.0 - x_scaled; // positive branch: 2 - x
-          } else {
-              kappa = 0.0;
-          }
-      } else { // x_scaled is negative
-          if (x_scaled >= -1.0) {
-              kappa = 1.0;
-          } else if (x_scaled >= -2.0) {
-              kappa = 2.0 + x_scaled; // negative branch: 2 + x
-          } else {
-              kappa = 0.0;
-          }
-        }
+      double abs_x = std::abs(x_scaled);
+      if (abs_x <= 1.0) {
+        kappa = 1.0;
+      } else if (abs_x <= c) {
+        kappa = c - abs_x;
       } else {
+        kappa = 0.0;
+      }
+     }
+      else {
         Rcpp::stop("type must be 'rectangular' or 'trapezoid'.");
     }
-    
     return kappa;
   }
 
